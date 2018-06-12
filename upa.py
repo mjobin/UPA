@@ -18,26 +18,18 @@ import progressbar
 import subprocess
 from subprocess import Popen, PIPE
 
-def bash_command(cmd, bverbose):
+def bash_command(cmd):
     cmdfile.write(cmd)
     cmdfile.write("\n\n")
     subp = subprocess.Popen(['/bin/bash', '-c', cmd], stdout=PIPE, stderr=PIPE)
-    subp.wait()
-    theout = subp.stdout.read()
-    if bverbose:
-        print theout
-    logfile.write(theout)
-    theerr = subp.stderr.read()
-    if bverbose:
-        print theerr
-    logfile.write(theerr)
-    return theout
-
-def bash_command_bare(cmd, bverbose):
-    cmdfile.write(cmd)
-    cmdfile.write("\n\n")
-    subp = subprocess.Popen(['/bin/bash', '-c', cmd])
-    subp.wait()
+    stdout, stderr = subp.communicate()
+    if verbose:
+        print stdout
+    logfile.write(stdout)
+    if verbose:
+        print stderr
+    logfile.write(stderr)
+    return stdout
 
 def vcf_name_strip(vcffilename):
     basecols = vcffilename.split(".")

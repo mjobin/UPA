@@ -25,8 +25,11 @@ clist <- list(
 
 setwd(paste(basefile, "/BEST", sep = ""))
 sfiles <- list.files(pattern="\\.Q$",full.names=TRUE)
+
 slist <- readQ(sfiles)
 
-# plotQ(slist,imgoutput="join", sppos="left", showindlab=F, grplab=famdf,  outputfilename="plotq", imgtype="png")
+clumppExport(slist,useexe=T)
 
-plotQ(slist,imgoutput="join", outputfilename="plotq", imgtype="png")
+plotQ(slist,imgoutput="join", sppos="left", showindlab=F, grplab=famdf,  outputfilename="plotq", imgtype="png", clustercol=clist$standard_12)
+#
+# plotQ(slist,imgoutput="join", outputfilename="plotq", imgtype="png", clustercol=clist$standard_12)

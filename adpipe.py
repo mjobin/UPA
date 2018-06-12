@@ -20,27 +20,21 @@ import shutil
 import random
 import subprocess
 from subprocess import Popen, PIPE
+import time
 
 
-def bash_command(cmd, bverbose):
+def bash_command(cmd):
     cmdfile.write(cmd)
     cmdfile.write("\n\n")
     subp = subprocess.Popen(['/bin/bash', '-c', cmd], stdout=PIPE, stderr=PIPE)
-    theout = subp.stdout.read()
-    if bverbose:
-        print theout
-    logfile.write(theout)
-    theerr = subp.stderr.read()
-    if bverbose:
-        print theerr
-    logfile.write(theerr)
-    return theout
-
-def bash_command_bare(cmd, bverbose):
-    cmdfile.write(cmd)
-    cmdfile.write("\n\n")
-    subp = subprocess.Popen(['/bin/bash', '-c', cmd])
-    subp.wait()
+    stdout, stderr = subp.communicate()
+    if verbose:
+        print stdout
+    logfile.write(stdout)
+    if verbose:
+        print stderr
+    logfile.write(stderr)
+    return stdout
 
 if __name__ == "__main__":
 
@@ -73,6 +67,8 @@ if __name__ == "__main__":
     parser.add_argument('-tvonly', dest='tvonly', help='Transversions only.',
                         action='store_true')
     parser.set_defaults(verbose=False)
+    parser.add_argument('-termcrit', metavar='<termcrit>', help='A termination criterion.',
+                        default=0.0001)
 
 
     args = parser.parse_args()
@@ -86,6 +82,7 @@ if __name__ == "__main__":
     reps = int(args.reps)
     tohaploid = bool(args.tohaploid)
     tvonly = bool(args.tvonly)
+    termcrit = float(args.termcrit)
 
     os.chdir(wd)
     cwd = os.getcwd()
@@ -125,6 +122,8 @@ if __name__ == "__main__":
     logfilename = wd + "/out.ap." + str(today) + ".log"
     print "Logging to: ", logfilename
 
+    start_time = time.time()
+
     logfile = open(logfilename, 'w')
 
     rng = random.SystemRandom()  # Uses /dev/urandom
@@ -149,9 +148,8 @@ if __name__ == "__main__":
     if tohaploid:
 
         print "\nConverting to tped format..."
-        bash_command_bare(
-            "plink --bed " + file + ".bed --bim " + file + ".bim --fam " + file + ".fam  --alleleACGT --recode transpose --out " + file,
-            verbose)
+        bash_command(
+            "plink --bed " + file + ".bed --bim " + file + ".bim --fam " + file + ".fam  --alleleACGT --recode transpose --out " + file)
 
         print "\nConverting to haploid..."
         tpedfile = open(file + ".tped", 'r')
@@ -165,14 +163,11 @@ if __name__ == "__main__":
 
         newtped = []
 
-
-
         bar = progressbar.ProgressBar()
 
         for i in bar(range(tlc)):
             tline = oldtped[i]
 
-        # for tline in tpedfile:
             cols = tline.rstrip().split()
 
             newtlist = []
@@ -181,13 +176,9 @@ if __name__ == "__main__":
             nalleles = list(set(genotypes))
             alleles = []
 
-
             for g in nalleles:
                 if g != '0':
                     alleles.append(g)
-
-
-
             if tvonly:
                 if 'A' in alleles and 'G' in alleles:
                     continue
@@ -211,46 +202,50 @@ if __name__ == "__main__":
         shutil.copy(file + ".fam", file + ".h.tfam")
 
         print "\nConverting to bed format..."
-        bash_command_bare("plink --tfile " + file + ".h --make-bed --out " + file + ".h", verbose)
+        bash_command("plink --tfile " + file + ".h --make-bed --out " + file + ".h")
 
     else:
         shutil.copy(file + ".bed", file + ".h.bed")
         shutil.copy(file + ".bim", file + ".h.bim")
         shutil.copy(file + ".fam", file + ".h.fam")
 
-
-
-
-
     #Admixture
     print "\nRunning Admixture..."
-    bar = progressbar.ProgressBar()
+
+    famfilename = file + ".h.fam"
+    ind2popname = filebase + "/" + filebase + ".ind2pop"
+    famfile = open(famfilename, 'r')
+    ind2pop = open(ind2popname, 'w')
+    for famline in famfile:
+        famcols = famline.split()
+        ind2pop.write(famcols[0])
+        ind2pop.write("\n")
+    famfile.close()
+    ind2pop.close()
+
     kcvss = []
     klogls = []
     kbests = {}
 
-
-
-    for k in bar(xrange(lowk, (hik + 1))):
+    pongfile = open(rdir + "pong_filemap", 'w')
+    for k in xrange(lowk, (hik + 1)):
         print "\n*********** K:" + str(k)
         kreplist = []
         kcvs = []
         logls = []
-        for j in xrange(reps):
+        bar = progressbar.ProgressBar()
+        for j in bar(xrange(0,reps+1)):
             jreplist = []
-            print "\n** rep:" + str(j)
             stdoutfilename = rdir + filebase + ".h." + str(k) + ".r" + str(j) + ".log"
-            print stdoutfilename
             stdoutfile = open(stdoutfilename, 'w')
-            stdoutfile.write(bash_command("admixture --cv " + file + ".h.bed " + str(k) + " -j" + threads + " -s " + str(rng.getrandbits(32)), verbose))
+            stdoutfile.write(bash_command("admixture --cv " + file + ".h.bed " + str(k) + " -j" + threads + " -s " + str(rng.getrandbits(32)) + " -C " + str(termcrit)))
             stdoutfile.close()
             pfile = filebase + ".h." + str(k) + ".P"
-            print pfile
             qfile = filebase + ".h." + str(k) + ".Q"
             shutil.move(pfile, rdir + filebase + ".h." + str(k) + ".r" + str(j) + ".P")
             shutil.move(qfile, rdir + filebase + ".h." + str(k) + ".r" + str(j) + ".Q")
             grepcmd = "grep -h CV " + stdoutfilename
-            grepline = bash_command(grepcmd, verbose)
+            grepline = bash_command(grepcmd)
             grepcols = grepline.split()
             kcvs.append(float(grepcols[3]))
             jreplist.append(float(grepcols[3]))
@@ -259,26 +254,34 @@ if __name__ == "__main__":
             stdreadout = open(stdoutfilename, 'r')
             for stdoutline in stdreadout:
                 if stdoutline.startswith("Loglikelihood:"):
-                    print stdoutline
                     loggrepcols = stdoutline.split()
                     logls.append(loggrepcols[1])
                     jreplist.append(loggrepcols[1])
                     continue
+            jreplist.append(str(j))
             kreplist.append(jreplist)
-        # print logls
+
+            runid = "run"
+            runid += str(j)
+            runid += "_K"
+            runid += str(k)
+            pongfile.write(runid)
+            pongfile.write("\t")
+            pongfile.write(str(k))
+            pongfile.write("\t")
+            pongfile.write(filebase + ".h." + str(k) + ".r" + str(j) + ".Q")
+            pongfile.write("\n")
 
         llbest = 0
         for i in xrange(reps):
             if logls[i] < logls[llbest]:
                 llbest = i
 
-        # llbest = np.argmax(logls)
         print ("For K = " + str(k) + " best index: " + str(llbest))
-        print (kreplist[llbest])
         pbestname = rdir + filebase + ".h." + str(k) + ".r" + str(llbest) + ".P"
-        shutil.move(pbestname, bestdir)
+        shutil.copy(pbestname, bestdir)
         qbestname = rdir + filebase + ".h." + str(k) + ".r" + str(llbest) + ".Q"
-        shutil.move(qbestname, bestdir)
+        shutil.copy(qbestname, bestdir)
         newqbestname = bestdir + "/" + filebase + "." + str(k) + ".r" + str(llbest) + ".Q"
 
 
@@ -304,25 +307,36 @@ if __name__ == "__main__":
             cvfileout.write(",")
         cvfileout.write("\n")
     cvfileout.close()
-    bash_command("Rscript /data/scripts/cvsplot.R " + cvfileoutname, True)
+    bash_command("Rscript /data/scripts/cvsplot.R " + cvfileoutname)
+
 
     bestname = bestdir + "/bests.csv"
     bestout = open(bestname, 'w')
-    bestout.write("K,CV,filebase,logL\n")
+    bestout.write("K,CV,filebase,logL, Rep\n")
     for k, l in kbests.iteritems():
         bestout.write(str(k))
         bestout.write(",")
         for i in l:
             bestout.write(str(i))
             bestout.write(",")
-
-
         bestout.write("\n")
     bestout.close()
+    pongfile.close()
 
 
-    bash_command("Rscript /data/scripts/pophelperrun.R " + filebase, True)
+    pongcmd = "pong -f -m " + rdir + "pong_filemap -i " + ind2popname
+    print "\n\n\n\n Copy and paste the following to run pong:\n"
+    print pongcmd
+    print "\nYou will need a separate terminal logged in with ssh -X to visualize."
+    print "On that terminal type :"
+    print "\nfirefox &\n"
+    print "And go to http://localhost:4000"
+    print "\nAlternatively, you can simply download the folder " + filebase + "to your own machine"
+    print "and run pong there. See http://brown.edu/Research/Ramachandran_Lab/projects/"
 
+    elapsed_time = time.time() - start_time
+
+    print "Number threads: " + str(threads)+ " Elapsed time: " +str( elapsed_time)
 
     cmdfile.close()
     logfile.close()
