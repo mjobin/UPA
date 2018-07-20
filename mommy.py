@@ -19,41 +19,12 @@ import subprocess
 from subprocess import Popen, PIPE
 
 def bash_command(cmd):
-    cmdfile.write(cmd)
-    cmdfile.write("\n\n")
     subp = subprocess.Popen(['/bin/bash', '-c', cmd], stdout=PIPE, stderr=PIPE)
     stdout, stderr = subp.communicate()
-    if verbose:
-        print stdout
-    logfile.write(stdout)
-    if verbose:
-        print stderr
-    logfile.write(stderr)
     return stdout
 
-
-if __name__ == "__main__":
-
-    print "\n****************\nTUBEAMP\n****************\n"
-
-
-
-    parser = argparse.ArgumentParser(description="# This script:\n"
-                                                    "1. does stuff.\n\t"
-                                                 "- ", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-bc_file', metavar='<bc_file>', help='location of barcode files, Must have a newline at end.', default="")
-    parser.add_argument('-bam_list', metavar='<bam_list', help='List of BAM files', default="")
-    parser.add_argument('-wd', metavar='<wd>', help='Working directory. Defaults to current.', default='.')
-    parser.add_argument('-verbose', dest='verbose', help='Print stdout and stderr to console.',
-                        action='store_true')
-    parser.set_defaults(verbose=False)
-    parser.add_argument('-overwrite', dest='overwrite', help='Overwrite existing files and directories.',
-                        action='store_true')
-    parser.set_defaults(overwrite=False)
-
-
-
-    #HAPLOGREP
+def haplogrep_gen_hsd(flist):
+    flength = len(flist)
     #Generate a consensus sequence using samtools mpileup
     fbamlist = []
     regdic = {}
@@ -69,7 +40,7 @@ if __name__ == "__main__":
         regionsfile.write("CHROM\tPOS\tPOS_TO\n")
         regline = ""
 
-        depthinfo = bash_command("samtools depth " + sample + ".bam", False)
+        depthinfo = bash_command("samtools depth " + sample + ".bam")
 
         depthlines = depthinfo.split("\n")
         curstart = 0
@@ -106,13 +77,28 @@ if __name__ == "__main__":
             lastpos = curpos
         regdic[sample + ".bam"] = regline
 
+    mtmcmd = "bcftools mpileup -I -d 8000 -Ou -f " + ref + " "
+    for fbam in fbamlist:
+        mtmcmd = mtmcmd + fbam + " "
+
+    mtmcmd = mtmcmd + "| bcftools call -V indels --ploidy 1 -Ou -m -v -o " + bcname + ".vcf"
+
+    bash_command(mtmcmd)
+    return bcname + ".vcf"
 
 
-    bash_command("java -jar /data/scripts/haplogrep-2.1.1.jar --format vcf --in " + bcname + "-E.vcf.gz --out " + bcname + "-E.hsd --phylotree 17", verbose)
+
+def haplogrep_java(invcf):
+
+    filebase, filext = os.path.splitext(invcf)
+
+    firstfile = filebase + "-FIRST.hsd"
+
+    bash_command("java -jar /data/scripts/haplogrep-2.1.1.jar --format vcf --in " + invcf + " --out " + firstfile + " --phylotree 17")
 
     # then edit that HSD file and do it again
     hsdoutlines = []
-    hsdfirstfile = open(bcname + "-E.hsd", 'r')
+    hsdfirstfile = open(firstfile, 'r')
     hsdheadline = "ERROR in HSD conversion"
     for hsdline in hsdfirstfile:
         hsdnewline = ""
@@ -133,14 +119,30 @@ if __name__ == "__main__":
                 hsdoutlines.append(hsdnewline)
     hsdfirstfile.close()
 
-    hsdfinalfile = open(bcname + "-E-SECOND.hsd", 'w')
-    hsdfinalfile.write("SampleID\tRange\tHaplogroup\tPolymorphisms")
-    hsdfinalfile.write("\n")
+    secondfile = filebase + "-FIRST.hsd"
+
+    hsdsecondfile = open(secondfile, 'w')
+    hsdsecondfile.write("SampleID\tRange\tHaplogroup\tPolymorphisms")
+    hsdsecondfile.write("\n")
     for hsdoutline in hsdoutlines:
         hsdoutcols = hsdoutline.split("\t")
         if len(hsdoutcols[3]) > 0: # LEAVE OUT indivs for whom where are no viable regions
-            hsdfinalfile.write(hsdoutline)
-            hsdfinalfile.write("\n")
-    hsdfinalfile.close()
+            hsdsecondfile.write(hsdoutline)
+            hsdsecondfile.write("\n")
+    hsdsecondfile.close()
 
-    bash_command("java -jar /data/scripts/haplogrep-2.1.1.jar --format hsd --in " + bcname + "-E-SECOND.hsd --out " + bcname + "-E-FINAL.hsd --phylotree 17", verbose)
+    finalfile = filebase + "-FINAL.hsd"
+
+    bash_command("java -jar /data/scripts/haplogrep-2.1.1.jar --format hsd --in " + hsdsecondfile + " --out " + finalfile + " --phylotree 17")
+
+
+
+if __name__ == "__main__":
+
+    print "\n****************\nMOMMY\n****************\n"
+    print "So far, I'm just a module...."
+
+
+
+
+    exit(1)
