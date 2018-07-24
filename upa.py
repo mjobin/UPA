@@ -63,12 +63,12 @@ if __name__ == "__main__":
     parser.add_argument('-mergevcffile', metavar='<mergevcffile>',
                         help='Larger VCF dataset to merge. MUST be indexed .bgzipped and variants ONLY!',
                         default='')
-    parser.add_argument('-mommy', dest='mommy', help='Invoke mommy.py.',
+    parser.add_argument('-mito', dest='mito', help='Utilize upa_mito.py.',
                         action='store_true')
-    parser.set_defaults(mommy=False)
-    parser.add_argument('-daddy', dest='daddy', help='Invoke daddy.py.',
+    parser.set_defaults(mito=False)
+    parser.add_argument('-ychr', dest='ychr', help='Invoke Y chromosome functions.',
                         action='store_true')
-    parser.set_defaults(daddy=False)
+    parser.set_defaults(ychr=False)
     parser.add_argument('-imputor', dest='imputor', help='Impute and tree construction',
                         action='store_true')
     parser.set_defaults(imputor=False)
@@ -138,8 +138,8 @@ if __name__ == "__main__":
     regionrestrict = args.regionrestrict
     vcfchromrename = args.vcfchromrename
     mergevcffile = args.mergevcffile
-    mommy = bool(args.mommy)
-    daddy = bool(args.daddy)
+    mito = bool(args.mito)
+    ychr = bool(args.ychr)
     maxdepth = args.maxdepth
     maxheight = args.maxheight
     nsize = args.nsize
@@ -303,10 +303,10 @@ if __name__ == "__main__":
     # # Convert to EIGENSTRAT
     # upa_convert.eigenstrat_convert(bcbase)
 
-    if daddy:
+    if ychr:
         upa_util.bash_command(yhaplo + "/callHaplogroups.py -i " + bcname + "-E-seqout.vcf", verbose, cmdfile, logfile)
 
-    if mommy:
+    if mito:
         regdic = upa_mito.haplogrep_gen_hsd(flist, mindepth, maxgap, ref, bcname, cmdfile, logfile)
         if haplogrepjava:
             upa_mito.haplogrep_java(bcname + ".vcf", regdic, cmdfile, logfile)
