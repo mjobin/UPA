@@ -2,14 +2,13 @@
 
 #####################################
 #####        HPG Lab            #####
-#####    updated May 2018      #####
+#####    updated July 2018      #####
 #####       MJJ                 #####
 #####################################
 
 # Written and maintained by Matthew Jobin, UCSC Human Paleogenomics Lab
 # Script for running Admixture etc on BAM files
 # Requires 'barcode' file with fastq prefix, output name and internal barcodes
-# Assumes tped2haploid.py in your $PATH
 
 import argparse
 from argparse import RawTextHelpFormatter
@@ -18,30 +17,12 @@ import progressbar
 import datetime
 import shutil
 import random
-import subprocess
-from subprocess import Popen, PIPE
 import time
-
-
-def bash_command(cmd):
-    cmdfile.write(cmd)
-    cmdfile.write("\n\n")
-    subp = subprocess.Popen(['/bin/bash', '-c', cmd], stdout=PIPE, stderr=PIPE)
-    stdout, stderr = subp.communicate()
-    if verbose:
-        print stdout
-    logfile.write(stdout)
-    if verbose:
-        print stderr
-    logfile.write(stderr)
-    return stdout
-
+import upa_util
 
 def tohaploid():
-
     print "\nConverting to tped format..."
-    bash_command(
-        "plink --bed " + file + ".bed --bim " + file + ".bim --fam " + file + ".fam  --alleleACGT --recode transpose --out " + file)
+    upa_util.bash_command("plink --bed " + file + ".bed --bim " + file + ".bim --fam " + file + ".fam  --alleleACGT --recode transpose --out " + file)
 
     print "\nConverting to haploid..."
     tpedfile = open(file + ".tped", 'r')
@@ -77,8 +58,8 @@ def tohaploid():
                 continue
         for icol in cols[0:4]:
             newtlist.append(icol)
-        for i in xrange(0, len(genotypes), 2):
-            thisg = random.choice([genotypes[i], genotypes[(i + 1)]])
+        for j in xrange(0, len(genotypes), 2):
+            thisg = random.choice([genotypes[j], genotypes[(j + 1)]])
             newtlist.append(thisg)
             newtlist.append(thisg)
         newtlist.append("\n")
@@ -93,10 +74,10 @@ def tohaploid():
     shutil.copy(file + ".fam", file + ".h.tfam")
 
     print "\nConverting to bed format..."
-    bash_command("plink --tfile " + file + ".h --make-bed --out " + file + ".h")
+    upa_util.bash_command("plink --tfile " + file + ".h --make-bed --out " + file + ".h", True, cmdfile, logfile)
+
 
 def run_ad():
-    #Admixture
     print "\nRunning Admixture..."
 
     famfilename = file + ".h.fam"
@@ -121,18 +102,18 @@ def run_ad():
         kcvs = []
         logls = []
         bar = progressbar.ProgressBar()
-        for j in bar(xrange(0,reps+1)):
+        for j in bar(xrange(0, reps + 1)):
             jreplist = []
             stdoutfilename = rdir + filebase + ".h." + str(k) + ".r" + str(j) + ".log"
             stdoutfile = open(stdoutfilename, 'w')
-            stdoutfile.write(bash_command("admixture --cv " + file + ".h.bed " + str(k) + " -j" + threads + " -s " + str(rng.getrandbits(32)) + " -C " + str(termcrit) + " -m " + optmethod))
+            stdoutfile.write(upa_util.bash_command("admixture --cv " + file + ".h.bed " + str(k) + " -j" + threads + " -s " + str(rng.getrandbits(32)) + " -C " + str(termcrit) + " -m " + optmethod, verbose, cmdfile, logfile))
             stdoutfile.close()
             pfile = filebase + ".h." + str(k) + ".P"
             qfile = filebase + ".h." + str(k) + ".Q"
             shutil.move(pfile, rdir + filebase + ".h." + str(k) + ".r" + str(j) + ".P")
             shutil.move(qfile, rdir + filebase + ".h." + str(k) + ".r" + str(j) + ".Q")
             grepcmd = "grep -h CV " + stdoutfilename
-            grepline = bash_command(grepcmd)
+            grepline = upa_util.bash_command(grepcmd, True, cmdfile, logfile)
             grepcols = grepline.split()
             kcvs.append(float(grepcols[3]))
             jreplist.append(float(grepcols[3]))
@@ -171,12 +152,10 @@ def run_ad():
         shutil.copy(qbestname, bestdir)
         newqbestname = bestdir + "/" + filebase + "." + str(k) + ".r" + str(llbest) + ".Q"
 
-
         logbestname = rdir + filebase + ".h." + str(k) + ".r" + str(llbest) + ".log"
         shutil.move(logbestname, bestdir)
 
         kbests[k] = kreplist[llbest]
-
 
         kcvss.append(kcvs)
         klogls.append(logls)
@@ -184,7 +163,7 @@ def run_ad():
     cvfileoutname = rdir + filebase + "-cvout.csv"
     cvfileout = open(cvfileoutname, 'w')
 
-    for k in xrange(lowk, (hik+1)):
+    for k in xrange(lowk, (hik + 1)):
         cvfileout.write(str(k))
         cvfileout.write(",")
     cvfileout.write("\n")
@@ -194,8 +173,7 @@ def run_ad():
             cvfileout.write(",")
         cvfileout.write("\n")
     cvfileout.close()
-    bash_command("Rscript /data/scripts/cvsplot.R " + cvfileoutname)
-
+    upa_util.bash_command("Rscript /data/scripts/cvsplot.R " + cvfileoutname, verbose, cmdfile, logfile)
 
     bestname = bestdir + "/bests.csv"
     bestout = open(bestname, 'w')
@@ -210,7 +188,6 @@ def run_ad():
     bestout.close()
     pongfile.close()
 
-
     pongcmd = "pong -f -m " + rdir + "pong_filemap -i " + ind2popname
     print "\n\n\n\n Copy and paste the following to run pong:\n"
     print pongcmd
@@ -223,20 +200,21 @@ def run_ad():
 
     elapsed_time = time.time() - start_time
 
-    print "Number threads: " + str(threads)+ " Elapsed time: " +str( elapsed_time)
+    print "Number threads: " + str(threads) + " Elapsed time: " + str(elapsed_time)
+
 
 if __name__ == "__main__":
 
     print "\n****************\nADPIPE\n****************\n"
 
     parser = argparse.ArgumentParser(description="# This script:\n"
-                                                "1. Prunes transverions.\n\t"
-                                                "2. Runs Admixture Reps times per each K.\n\t"
-                                                "3. Sets up visualization in PONG.\n\t"
+                                                 "1. Prunes transverions.\n\t"
+                                                 "2. Runs Admixture Reps times per each K.\n\t"
+                                                 "3. Sets up visualization in PONG.\n\t"
                                                  "- ", formatter_class=RawTextHelpFormatter)
 
-
-    parser.add_argument('-file', metavar='<file>', help='Name of .bed .bim .fam files WITH NO EXTENSION.', required=True)
+    parser.add_argument('-file', metavar='<file>', help='Name of .bed .bim .fam files WITH NO EXTENSION.',
+                        required=True)
     parser.add_argument('-wd', metavar='<wd>', help='Working directory. Defaults to current.', default='.')
     parser.add_argument('-verbose', dest='verbose', help='Print stdout and stderr to console.',
                         action='store_true')
@@ -244,7 +222,8 @@ if __name__ == "__main__":
     parser.add_argument('-overwrite', dest='overwrite', help='Overwrite existing files and directories.',
                         action='store_true')
     parser.set_defaults(overwrite=False)
-    parser.add_argument('-threads', metavar='<threads>', help='The number of threads to assign to each task when possible',
+    parser.add_argument('-threads', metavar='<threads>',
+                        help='The number of threads to assign to each task when possible',
                         default="23")
     parser.add_argument('-lowk', metavar='<lowk>', help='Lowest K value for Admixture run',
                         default=1)
@@ -262,7 +241,6 @@ if __name__ == "__main__":
                         default=0.0001)
     parser.add_argument('-optmethod', metavar='<optmethod>', help='Optimization method: em or block.',
                         default='block')
-
 
     args = parser.parse_args()
     wd = args.wd
@@ -287,7 +265,7 @@ if __name__ == "__main__":
 
     rdir = wd
 
-    #try to create result folder, but exit if it is already there
+    # try to create result folder, but exit if it is already there
     if os.path.exists(filebase):
         if overwrite:
             shutil.rmtree(filebase)
@@ -302,11 +280,10 @@ if __name__ == "__main__":
 
     bestdir = rdir + "BEST"
     if os.path.exists(bestdir):
-        print "Error! Folder " + bestdir+ " already exists. Exiting."
+        print "Error! Folder " + bestdir + " already exists. Exiting."
         exit()
     else:
         os.mkdir(bestdir)
-
 
     cmdfile = open("ap_cmds", 'w')
 
@@ -336,9 +313,7 @@ if __name__ == "__main__":
         print "ERROR: Cannot find " + wd + "/" + file + ".fam"
         exit()
 
-
-    #Prune transversions
-
+    # Prune transversions
     if tohaploid:
         tohaploid()
     else:
@@ -346,9 +321,8 @@ if __name__ == "__main__":
         shutil.copy(file + ".bim", file + ".h.bim")
         shutil.copy(file + ".fam", file + ".h.fam")
 
-    #Admixture
+    # Admixture
     run_ad()
-
 
     cmdfile.close()
     logfile.close()
