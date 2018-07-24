@@ -173,7 +173,7 @@ def run_ad():
             cvfileout.write(",")
         cvfileout.write("\n")
     cvfileout.close()
-    upa_util.bash_command("Rscript /data/scripts/cvsplot.R " + cvfileoutname, verbose, cmdfile, logfile)
+    upa_util.bash_command("Rscript cvsplot.R " + cvfileoutname, verbose, cmdfile, logfile)
 
     bestname = bestdir + "/bests.csv"
     bestout = open(bestname, 'w')
