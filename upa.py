@@ -14,40 +14,22 @@ import argparse
 import os
 import datetime
 import progressbar
-import subprocess
-from subprocess import Popen, PIPE
 import gzip
 import shutil
-import fnmatch
-import subprocess
-from subprocess import Popen, PIPE
-import upa_convert
-import mommy
+import upa_util
+import upa_mito
 
-def bash_command(cmd):
-    cmdfile.write(cmd)
-    cmdfile.write("\n\n")
-    subp = subprocess.Popen(['/bin/bash', '-c', cmd], stdout=PIPE, stderr=PIPE)
-    stdout, stderr = subp.communicate()
-    if verbose:
-        print stdout
-    logfile.write(stdout)
-    if verbose:
-        print stderr
-    logfile.write(stderr)
-    return stdout
 
 if __name__ == "__main__":
 
     print "\n****************\nUPA\n****************\n"
 
-
-
     parser = argparse.ArgumentParser(description="# This script:\n"
-                                                    "1. does stuff.\n\t"
+                                                 "1. does stuff.\n\t"
                                                  "- ", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('-bc_file', metavar='<bc_file>', help='location of barcode files, Must have a newline at end.', default="")
+    parser.add_argument('-bc_file', metavar='<bc_file>', help='location of barcode files, Must have a newline at end.',
+                        default="")
     parser.add_argument('-bc_leftspec', metavar='<bc_leftspec>', help='extensions or name to the left of reference.',
                         default=".M.cf.")
     parser.add_argument('-bc_rightspec', metavar='<bc_rightspec>', help='extensions or name to the right of quality.',
@@ -75,9 +57,11 @@ if __name__ == "__main__":
     parser.set_defaults(diploid=False)
     parser.add_argument('-regionrestrict', metavar='<regionrestrict>', help='Restrict to a region.',
                         default='')
-    parser.add_argument('-vcfchromrename', metavar='<vcfchromrename>', help='Use this is you are SURE you are merging into the same region just with different names!!',
+    parser.add_argument('-vcfchromrename', metavar='<vcfchromrename>',
+                        help='Use this is you are SURE you are merging into the same region just with different names!!',
                         default='')
-    parser.add_argument('-mergevcffile', metavar='<mergevcffile>', help='Larger VCF dataset to merge. MUST be indexed .bgzipped and variants ONLY!',
+    parser.add_argument('-mergevcffile', metavar='<mergevcffile>',
+                        help='Larger VCF dataset to merge. MUST be indexed .bgzipped and variants ONLY!',
                         default='')
     parser.add_argument('-mommy', dest='mommy', help='Invoke mommy.py.',
                         action='store_true')
@@ -88,6 +72,9 @@ if __name__ == "__main__":
     parser.add_argument('-imputor', dest='imputor', help='Impute and tree construction',
                         action='store_true')
     parser.set_defaults(imputor=False)
+    parser.add_argument('-vcfnamestrip', dest='vcfnamestrip', help='Strip long names from VCF entries. Can avoid some errors.',
+                        action='store_true')
+    parser.set_defaults(vcfnamestrip=False)
     parser.add_argument('-maxheight', metavar='<maxheight>',
                         help='Height of search toward root for collecting neighbors.',
                         default="3")
@@ -102,7 +89,8 @@ if __name__ == "__main__":
     parser.add_argument('-ncollect', metavar='<ncollect>', help='rootward, hops, distance, mono',
                         default='rootward')
     parser.add_argument('-maxhops', metavar='<maxhops>', help='Number of alternate runs.', default="5")
-    parser.add_argument('-yhaplo', metavar='<yhaplo>', help='Location of yhaplo. Leave blank to prevent it from running.',
+    parser.add_argument('-yhaplo', metavar='<yhaplo>',
+                        help='Location of yhaplo. Leave blank to prevent it from running.',
                         default='')
     parser.add_argument('-poplistfile', metavar='<poplistfile>',
                         help='Text file where the FIRST column is the indiviodual and the THIRD coumn is the population. Can be the same file as your plink keeplist',
@@ -127,10 +115,13 @@ if __name__ == "__main__":
                         action='store_true')
     parser.set_defaults(haplogrepjava=False)
 
+    parser.add_argument('-maxgap', metavar='<maxgap>', help='Maximum gap in read before it is counted as a new region',
+                        default=1)
+    parser.add_argument('-mindepth', metavar='<mindepth>', help='Minimum depth to be in a region',
+                        default=1)
 
 
-
-    #Parsing args
+    # Parsing args
     args = parser.parse_args()
     wd = args.wd
     bcfile = args.bc_file
@@ -157,8 +148,9 @@ if __name__ == "__main__":
     maxhops = args.maxhops
     poplistfile = args.poplistfile
     imputor = bool(args.imputor)
+    vcfnamestrip = bool(args.vcfnamestrip)
 
-    #adpipe
+    # adpipe
     lowk = int(args.lowk)
     hik = int(args.hik)
     reps = int(args.reps)
@@ -167,9 +159,11 @@ if __name__ == "__main__":
     termcrit = float(args.termcrit)
     optmethod = args.optmethod
 
+    maxgap = int(args.maxgap)
+    mindepth = int(args.mindepth)
     haplogrepjava = bool(args.haplogrepjava)
 
-    #Setup
+    # Setup
     os.chdir(wd)
     cwd = os.getcwd()
     print "Working in: ", cwd
@@ -179,7 +173,6 @@ if __name__ == "__main__":
     print "Logging to: ", logfilename
 
     logfile = open(logfilename, 'w')
-
 
     refbase = os.path.basename(ref)
     refname, fileext = os.path.splitext(refbase)
@@ -196,7 +189,8 @@ if __name__ == "__main__":
         for bcline in bcin:
             bccols = bcline.split("\t")
 
-            binfile = wd + "/" + bccols[1] + "/BWA_" + refname + "/" + bccols[1] + bcleftspec + refname + ".q" + q + bcrightspec
+            binfile = wd + "/" + bccols[1] + "/BWA_" + refname + "/" + bccols[
+                1] + bcleftspec + refname + ".q" + q + bcrightspec
             print binfile
             if os.path.isfile(binfile + ".bam"):
                 flist.append(binfile)
@@ -221,7 +215,6 @@ if __name__ == "__main__":
         print "Either the bc_file or the bam_list args should be used, but not both."
         exit(1)
 
-
     flength = len(flist)
     print "Number of entries: ", flength
 
@@ -230,33 +223,35 @@ if __name__ == "__main__":
         bar = progressbar.ProgressBar()
         for i in bar(range(flength)):
             sample = flist[i]
-            bash_command("samtools index " + sample + ".bam")
+            upa_util.bash_command("samtools index " + sample + ".bam", verbose, cmdfile, logfile)
 
-    #CREATE MERGED VCF
+    # CREATE MERGED VCF
     print "\nCreating mpileup consensus and writing as a VCF..."
     vcflist = []
     bar = progressbar.ProgressBar()
     for i in bar(range(flength)):
         sample = flist[i]
 
-        depthinfo = bash_command("samtools depth " + sample + ".bam")
+        depthinfo = upa_util.bash_command("samtools depth " + sample + ".bam", verbose, cmdfile, logfile)
 
         mpileupcmd = ("bcftools mpileup -q " + q + " -d 8000 -Ou -f " + ref + " " + sample + ".bam")
         if regionrestrict:
             mpileupcmd = mpileupcmd + " -r " + regionrestrict
+        mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + sample + ".vcf.gz - "
         mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + sample + ".vcf.gz - "
         if diploid:
             mpileupcmd = mpileupcmd + " --ploidy 2 "
         else:
             mpileupcmd = mpileupcmd + " --ploidy 1 "
 
-        bash_command(mpileupcmd)
-        bash_command("bcftools index -f " + sample + ".vcf.gz")
+        upa_util.bash_command(mpileupcmd, verbose, cmdfile, logfile)
+        upa_util.bash_command("bcftools index -f " + sample + ".vcf.gz", verbose, cmdfile, logfile)
 
         if vcfchromrename:
             renamefile = wd + "/" + vcfchromrename
-            bash_command("bcftools annotate --rename-chrs  " + renamefile + " " + sample + ".vcf.gz -Oz -o " + sample + ".a.vcf.gz")
-            bash_command("bcftools index -f " + sample + ".a.vcf.gz")
+            upa_util.bash_command(
+                "bcftools annotate --rename-chrs  " + renamefile + " " + sample + ".vcf.gz -Oz -o " + sample + ".a.vcf.gz", verbose, cmdfile, logfile)
+            upa_util.bash_command("bcftools index -f " + sample + ".a.vcf.gz", verbose, cmdfile, logfile)
             vcflist.append(sample + ".a.vcf.gz")
         else:
             vcflist.append(sample + ".vcf.gz")
@@ -273,14 +268,13 @@ if __name__ == "__main__":
     for vcff in vcflist:
         vcfmergecmd = vcfmergecmd + vcff + " "
 
-    bash_command(vcfmergecmd)
+    upa_util.bash_command(vcfmergecmd, True, cmdfile, logfile)
 
+    if vcfnamestrip:
+        print "Stripping long names from VCF genotypes."
+        upa_util.vcf_name_strip(bcname + "-MERGED.vcf")
 
-    print "Stripping long names from VCF genotypes."
-    upa_convert.vcf_name_strip(bcname + "-MERGED.vcf")
-
-
-    #IMPUTOR
+    # IMPUTOR
     if imputor:
         if diploid:
             print "IMPUTOR works on haploid data only! Exiting."
@@ -289,52 +283,49 @@ if __name__ == "__main__":
         impcmd = "imputor.py -file " + bcname + "-MERGED.vcf -out vcf -maxthreads " + threads + " -ncollect " + ncollect + " -maxheight " + maxheight + " -maxdepth " + maxdepth + " -passes 1 -msize " + msize + " -nsize " + nsize + " -maxhops " + maxhops
         if imptree:
             impcmd = impcmd + " -tree " + imptree
-        bash_command_bare(impcmd, True)
+        upa_util.bash_command_bare(impcmd, True, cmdfile, logfile)
         with open(bcname + "-MERGED-out.vcf", 'r') as f_in, gzip.open(bcname + "-E.vcf.gz", 'wb') as f_out:
             shutil.copyfileobj(f_in, f_out)
         shutil.move(bcname + "-E.vcf.gz",
                     bcname + "-MERGED.vcf.gz")  # Overwrite with imputed sequence so pipeline knows which to use
 
-
     print "Converting " + bcname + ".vcf to PED format"
-    bash_command("plink --vcf " + bcname + "-MERGED.vcf --double-id --allow-extra-chr --missing-phenotype 2 --recode12 --out " + bcname)
+    upa_util.bash_command(
+        "plink --vcf " + bcname + "-MERGED.vcf --double-id --allow-extra-chr --missing-phenotype 2 --recode12 --out " + bcname, verbose, cmdfile, logfile)
 
     # Alter for pops
     if poplistfile:
-        pedfilename = upa_convert.poplist_alter(poplistfile, bcname)
+        pedfilename = upa_util.poplist_alter(poplistfile, bcname)
 
     print "\nRunning SnpRelatePCA..."
-    bash_command("Rscript /data/scripts/snprelatepca.R " + bcname)
+    upa_util.bash_command("Rscript /data/scripts/snprelatepca.R " + bcname, verbose, cmdfile, logfile)
 
     # # Convert to EIGENSTRAT
     # upa_convert.eigenstrat_convert(bcbase)
 
     if daddy:
-        bash_command(yhaplo + "/callHaplogroups.py -i " + bcname + "-E-seqout.vcf")
+        upa_util.bash_command(yhaplo + "/callHaplogroups.py -i " + bcname + "-E-seqout.vcf", verbose, cmdfile, logfile)
 
     if mommy:
-        vcfinitial = mommy.haplogrep_gen_hsd(flist)
-        print "VCF file for upload :" + vcfinitial
+        regdic = upa_mito.haplogrep_gen_hsd(flist, mindepth, maxgap, ref, bcname, cmdfile, logfile)
         if haplogrepjava:
-            mommy.haplogrep_java(vcfinitial)
-
+            upa_mito.haplogrep_java(bcname + ".vcf", regdic, cmdfile, logfile)
 
     print "Running Admixture..."
-    bash_command("plink --file " + bcname + " --make-bed --out " + bcname)
+    upa_util.bash_command("plink --file " + bcname + " --make-bed --allow-extra-chr --out " + bcname, verbose, cmdfile, logfile)
     adpipeline = "adpipe.py -wd " + wd + " -file " + bcname
     if overwrite:
         adpipeline += " -overwrite"
     if verbose:
         adpipeline += " -verbose"
-    adpipeline += " -threads " + str(threads) + " -lowk " + str(lowk) + " -hik " + str(hik) + " -reps " + str(reps) + " -termcrit " + str(termcrit) + " -optmethod " + str(optmethod)
+    adpipeline += " -threads " + str(threads) + " -lowk " + str(lowk) + " -hik " + str(hik) + " -reps " + str(
+        reps) + " -termcrit " + str(termcrit) + " -optmethod " + str(optmethod)
     if tohaploid:
         adpipeline += " -tohaploid"
     if tvonly:
         adpipeline += " -tvonly"
 
-    bash_command(adpipeline)
-
-
+    upa_util.bash_command(adpipeline, verbose, cmdfile, logfile)
 
     logfile.close()
     cmdfile.close()
@@ -343,3 +334,4 @@ if __name__ == "__main__":
 else:
     print "Not yet configured as a module"
     exit(1)
+
