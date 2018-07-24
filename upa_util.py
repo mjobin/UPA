@@ -6,9 +6,25 @@
 #####       MJJ                 #####
 #####################################
 
-# File format conversion script for use with UPA
+# File format conversion and utility script for use with UPA
 # Author: Matthew Jobin, UCSC Human Paleogenomics Lab
 import shutil
+import subprocess
+from subprocess import PIPE
+
+def bash_command(cmd, verbose, cmdfile, logfile):
+    cmdfile.write(cmd)
+    cmdfile.write("\n\n")
+    subp = subprocess.Popen(['/bin/bash', '-c', cmd], stdout=PIPE, stderr=PIPE)
+    stdout, stderr = subp.communicate()
+    subp.wait()
+    if verbose:
+        print stdout
+    logfile.write(stdout)
+    if verbose:
+        print stderr
+    logfile.write(stderr)
+    return stdout
 
 def vcf_name_strip(vcffilename):
     basecols = vcffilename.split(".")
