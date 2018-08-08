@@ -201,8 +201,6 @@ if __name__ == "__main__":
                 print "ERROR: File " + binfile + " does not seem to have a corresponding BAM  file in " + wd
                 exit(1)
 
-
-
     elif bcfile == "" and bamlist != "":
         bcbase = os.path.basename(bamlist)
         bcname, fileext = os.path.splitext(bamlist)
@@ -210,7 +208,7 @@ if __name__ == "__main__":
         for bamline in bamin:
             binfile = bamline.rstrip()
             if os.path.isfile(binfile):
-                flist.append(binfile)
+                flist.append(binfile.rsplit(".", 1)[0])
             else:
                 print "ERROR: File " + binfile + " does not seem to have a corresponding BAM  file in " + wd
                 exit(1)
