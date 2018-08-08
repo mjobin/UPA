@@ -63,6 +63,9 @@ if __name__ == "__main__":
     parser.add_argument('-mergevcffile', metavar='<mergevcffile>',
                         help='Larger VCF dataset to merge. MUST be indexed .bgzipped and variants ONLY!',
                         default='')
+    parser.add_argument('-mergebamfile', metavar='<mergebamfile>',
+                        help='Larger BAM dataset to merge.',
+                        default='')
     parser.add_argument('-mito', dest='mito', help='Utilize upa_mito.py.',
                         action='store_true')
     parser.set_defaults(mito=False)
@@ -114,7 +117,6 @@ if __name__ == "__main__":
     parser.add_argument('-haplogrepjava', dest='haplogrepjava', help='haplogrepjava.',
                         action='store_true')
     parser.set_defaults(haplogrepjava=False)
-
     parser.add_argument('-maxgap', metavar='<maxgap>', help='Maximum gap in read before it is counted as a new region',
                         default=1)
     parser.add_argument('-mindepth', metavar='<mindepth>', help='Minimum depth to be in a region',
@@ -138,6 +140,7 @@ if __name__ == "__main__":
     regionrestrict = args.regionrestrict
     vcfchromrename = args.vcfchromrename
     mergevcffile = args.mergevcffile
+    mergebamfile = args.mergebamfile
     mito = bool(args.mito)
     ychr = bool(args.ychr)
     maxdepth = args.maxdepth
@@ -238,7 +241,7 @@ if __name__ == "__main__":
         if regionrestrict:
             mpileupcmd = mpileupcmd + " -r " + regionrestrict
         mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + sample + ".vcf.gz - "
-        mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + sample + ".vcf.gz - "
+
         if diploid:
             mpileupcmd = mpileupcmd + " --ploidy 2 "
         else:
@@ -260,7 +263,24 @@ if __name__ == "__main__":
     vcfmergecmd = "bcftools merge -Ov -o " + bcname + "-MERGED.vcf "
     if regionrestrict:
         vcfmergecmd = vcfmergecmd + "-r " + regionrestrict + " "
-    if mergevcffile:
+    if mergebamfile:
+        mergebambase = mergebamfile.rsplit(".", 1)[0]
+        mergevcffile = mergebambase + ".vcf.gz"
+        depthinfo = upa_util.bash_command("samtools depth " + mergebamfile, verbose, cmdfile, logfile)
+        mpileupcmd = ("bcftools mpileup -q " + q + " -d 8000 -Ou -f " + ref + " " + mergebamfile)
+        if regionrestrict:
+            mpileupcmd = mpileupcmd + " -r " + regionrestrict
+        mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + mergevcffile + " - "
+
+        if diploid:
+            mpileupcmd = mpileupcmd + " --ploidy 2 "
+        else:
+            mpileupcmd = mpileupcmd + " --ploidy 1 "
+
+        upa_util.bash_command(mpileupcmd, verbose, cmdfile, logfile)
+        upa_util.bash_command("bcftools index -f " + mergevcffile, verbose, cmdfile, logfile)
+        vcfmergecmd = vcfmergecmd + mergevcffile + " "
+    elif mergevcffile:
         print "Attempting merge with " + mergevcffile
         print "\nWARNING: This will fail in a VERY ugly way if this file and all your files were not mapped using the "
         print "same reference sequence  AND all the chromosomes are named using the same convention!"
