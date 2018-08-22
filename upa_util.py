@@ -10,6 +10,7 @@
 # Author: Matthew Jobin, UCSC Human Paleogenomics Lab
 import shutil
 import subprocess
+import os
 from subprocess import PIPE
 
 def bash_command(cmd, verbose, cmdfile, logfile):
@@ -33,17 +34,23 @@ def vcf_name_strip(vcffilename):
     file_data = open(vcffilename, 'rb')
     outstrip = open(vcfstrippedname, 'wb')
 
+
     for file_line in file_data:
         cols = file_line.split('\t')
         if cols[0] == '#CHROM':  # Header line of VCF file
+
             if cols[8] == 'FORMAT':  # On header line, a FORMAT column next to the fixed columns?
+
                 fixedgenos = cols[:9]
                 orig_names = cols[9:]  # If so, remaining columns are the genotypes
                 for orig_name in orig_names:
-                    dotsplits = orig_name.split(".")
+
+                    nodir = os.path.basename(orig_name)
+                    dotsplits = nodir.split(".")
                     dotsplit = dotsplits[0]
                     nounder = dotsplit.replace("_", "-")
                     finalname = nounder[:15]
+
                     fixedgenos.append(finalname)
                 outstrip.write('\t'.join(fixedgenos))
                 outstrip.write("\n")
@@ -59,16 +66,21 @@ def vcf_name_strip(vcffilename):
 def poplist_alter(poplistfile, namebase):
     poplist = {}
     poplistd = open(poplistfile, 'r')
+
     for poplistline in poplistd:
         popstrip = poplistline.rstrip()
-        popcols = popstrip.split("\t")
-        poplist[popcols[1]] = popcols[0]
+        if len(popstrip) > 0:
+            popcols = popstrip.split("\t")
+            print popcols
+            poplist[popcols[1]] = popcols[0]
+
     pedfilename = namebase + ".ped"
     pedfiled = open(pedfilename, 'r')
     pedtmp = open("pedtemp.ped", 'w')
     for pedfileline in pedfiled:
         pedstrip = pedfileline.rstrip()
         pedcols = pedstrip.split(" ")
+
         if pedcols[1] in poplist:
             pedcols[0] = poplist[pedcols[1]]
         newpedline = '\t'.join(pedcols)

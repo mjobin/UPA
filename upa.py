@@ -121,6 +121,9 @@ if __name__ == "__main__":
                         default=1)
     parser.add_argument('-mindepth', metavar='<mindepth>', help='Minimum depth to be in a region',
                         default=1)
+    parser.add_argument('-admixture', dest='admixture', help='Run admixture.',
+                        action='store_true')
+    parser.set_defaults(admixture=False)
 
 
     # Parsing args
@@ -152,6 +155,7 @@ if __name__ == "__main__":
     poplistfile = args.poplistfile
     imputor = bool(args.imputor)
     vcfnamestrip = bool(args.vcfnamestrip)
+    admixture = bool(args.admixture)
 
     # adpipe
     lowk = int(args.lowk)
@@ -182,6 +186,14 @@ if __name__ == "__main__":
 
     flist = []
 
+    # cmdfile.write("Arguments used:")
+    # for arg in vars(args):
+    #     cmdfile.write(arg)
+    #     cmdfile.write("\t")
+    #     # cmdfile.write(getattr(args,arg))
+    #     cmdfile.write("\n")
+
+
     bcname = ""
 
     print "\nChecking for input files..."
@@ -194,7 +206,6 @@ if __name__ == "__main__":
 
             binfile = wd + "/" + bccols[1] + "/BWA_" + refname + "/" + bccols[
                 1] + bcleftspec + refname + ".q" + q + bcrightspec
-            print binfile
             if os.path.isfile(binfile + ".bam"):
                 flist.append(binfile)
             else:
@@ -219,6 +230,7 @@ if __name__ == "__main__":
     flength = len(flist)
     print "Number of entries: ", flength
 
+
     if samindex:
         print "\nIndexing..."
         bar = progressbar.ProgressBar()
@@ -233,12 +245,19 @@ if __name__ == "__main__":
     for i in bar(range(flength)):
         sample = flist[i]
 
+        nodir = os.path.basename(sample)
+        nodircols = nodir.split(".")
+        finalsampname = nodircols[0]
+
+
         depthinfo = upa_util.bash_command("samtools depth " + sample + ".bam", verbose, cmdfile, logfile)
 
         mpileupcmd = ("bcftools mpileup -q " + q + " -d 8000 -Ou -f " + ref + " " + sample + ".bam")
         if regionrestrict:
             mpileupcmd = mpileupcmd + " -r " + regionrestrict
-        mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + sample + ".vcf.gz - "
+        mpileupcmd = mpileupcmd + " | bcftools call -Ov -m -o " + sample + ".vcf - "
+
+
 
         if diploid:
             mpileupcmd = mpileupcmd + " --ploidy 2 "
@@ -246,6 +265,8 @@ if __name__ == "__main__":
             mpileupcmd = mpileupcmd + " --ploidy 1 "
 
         upa_util.bash_command(mpileupcmd, verbose, cmdfile, logfile)
+
+
         upa_util.bash_command("bcftools index -f " + sample + ".vcf.gz", verbose, cmdfile, logfile)
 
         if vcfchromrename:
@@ -256,6 +277,7 @@ if __name__ == "__main__":
             vcflist.append(sample + ".a.vcf.gz")
         else:
             vcflist.append(sample + ".vcf.gz")
+
 
     print "\nMerging sample VCF files..."
     vcfmergecmd = "bcftools merge -Ov -o " + bcname + "-MERGED.vcf "
@@ -288,9 +310,12 @@ if __name__ == "__main__":
 
     upa_util.bash_command(vcfmergecmd, True, cmdfile, logfile)
 
-    if vcfnamestrip:
-        print "Stripping long names from VCF genotypes."
-        upa_util.vcf_name_strip(bcname + "-MERGED.vcf")
+
+    print "Stripping long names from VCF genotypes. This should also match sample names to either the second coolumn name of a barcode file or the first element of the file name on the a BAM file list."
+    upa_util.vcf_name_strip(bcname + "-MERGED.vcf")
+
+    upa_util.bash_command("bcftools index -f " + bcname + "-MERGED.vcf", verbose, cmdfile, logfile)
+
 
     # IMPUTOR
     if imputor:
@@ -316,7 +341,7 @@ if __name__ == "__main__":
         pedfilename = upa_util.poplist_alter(poplistfile, bcname)
 
     print "\nRunning SnpRelatePCA..."
-    upa_util.bash_command("Rscript /data/scripts/snprelatepca.R " + bcname, verbose, cmdfile, logfile)
+    upa_util.bash_command("Rscript /data/scripts/snprelatepca.R " + bcname + " " + threads, verbose, cmdfile, logfile)
 
     # # Convert to EIGENSTRAT
     # upa_convert.eigenstrat_convert(bcbase)
@@ -329,21 +354,22 @@ if __name__ == "__main__":
         if haplogrepjava:
             upa_mito.haplogrep_java(bcname + ".vcf", regdic, cmdfile, logfile)
 
-    print "Running Admixture..."
-    upa_util.bash_command("plink --file " + bcname + " --make-bed --allow-extra-chr --out " + bcname, verbose, cmdfile, logfile)
-    adpipeline = "adpipe.py -wd " + wd + " -file " + bcname
-    if overwrite:
-        adpipeline += " -overwrite"
-    if verbose:
-        adpipeline += " -verbose"
-    adpipeline += " -threads " + str(threads) + " -lowk " + str(lowk) + " -hik " + str(hik) + " -reps " + str(
-        reps) + " -termcrit " + str(termcrit) + " -optmethod " + str(optmethod)
-    if tohaploid:
-        adpipeline += " -tohaploid"
-    if tvonly:
-        adpipeline += " -tvonly"
+    if admixture:
+        print "Running Admixture..."
+        upa_util.bash_command("plink --file " + bcname + " --make-bed --allow-extra-chr --out " + bcname, verbose, cmdfile, logfile)
+        adpipeline = "adpipe.py -wd " + wd + " -file " + bcname
+        if overwrite:
+            adpipeline += " -overwrite"
+        if verbose:
+            adpipeline += " -verbose"
+        adpipeline += " -threads " + str(threads) + " -lowk " + str(lowk) + " -hik " + str(hik) + " -reps " + str(
+            reps) + " -termcrit " + str(termcrit) + " -optmethod " + str(optmethod)
+        if tohaploid:
+            adpipeline += " -tohaploid"
+        if tvonly:
+            adpipeline += " -tvonly"
 
-    upa_util.bash_command(adpipeline, verbose, cmdfile, logfile)
+        upa_util.bash_command(adpipeline, verbose, cmdfile, logfile)
 
     logfile.close()
     cmdfile.close()

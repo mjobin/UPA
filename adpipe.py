@@ -20,9 +20,9 @@ import random
 import time
 import upa_util
 
-def tohaploid():
+def converttohaploid():
     print "\nConverting to tped format..."
-    upa_util.bash_command("plink --bed " + file + ".bed --bim " + file + ".bim --fam " + file + ".fam  --alleleACGT --recode transpose --out " + file)
+    upa_util.bash_command("plink --bed " + file + ".bed --bim " + file + ".bim --fam " + file + ".fam  --alleleACGT --recode transpose --out " + file, verbose, cmdfile, logfile)
 
     print "\nConverting to haploid..."
     tpedfile = open(file + ".tped", 'r')
@@ -315,7 +315,7 @@ if __name__ == "__main__":
 
     # Prune transversions
     if tohaploid:
-        tohaploid()
+        converttohaploid()
     else:
         shutil.copy(file + ".bed", file + ".h.bed")
         shutil.copy(file + ".bim", file + ".h.bim")
