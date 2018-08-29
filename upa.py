@@ -255,9 +255,7 @@ if __name__ == "__main__":
         mpileupcmd = ("bcftools mpileup -q " + q + " -d 8000 -Ou -f " + ref + " " + sample + ".bam")
         if regionrestrict:
             mpileupcmd = mpileupcmd + " -r " + regionrestrict
-        mpileupcmd = mpileupcmd + " | bcftools call -Ov -m -o " + sample + ".vcf - "
-
-
+        mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + sample + ".vcf.gz - "
 
         if diploid:
             mpileupcmd = mpileupcmd + " --ploidy 2 "
