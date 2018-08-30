@@ -202,10 +202,9 @@ if __name__ == "__main__":
         bcname, fileext = os.path.splitext(bcbase)
         bcin = open(bcfile, 'r')
         for bcline in bcin:
-            bccols = bcline.split("\t")
+            bccols = bcline.split()
 
-            binfile = wd + "/" + bccols[1] + "/BWA_" + refname + "/" + bccols[
-                1] + bcleftspec + refname + ".q" + q + bcrightspec
+            binfile = wd + "/" + bccols[1] + "/BWA_" + refname + "/" + bccols[1] + bcleftspec + refname + ".q" + q + bcrightspec
             if os.path.isfile(binfile + ".bam"):
                 flist.append(binfile)
             else:
@@ -229,6 +228,7 @@ if __name__ == "__main__":
 
     flength = len(flist)
     print "Number of entries: ", flength
+
 
 
     if samindex:
