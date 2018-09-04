@@ -106,10 +106,10 @@ if __name__ == "__main__":
                         default=10)
     parser.add_argument('-tohaploid', dest='tohaploid', help='Haploid conversion.',
                         action='store_true')
-    parser.set_defaults(verbose=False)
+    parser.set_defaults(tohaploid=False)
     parser.add_argument('-tvonly', dest='tvonly', help='Transversions only.',
                         action='store_true')
-    parser.set_defaults(verbose=False)
+    parser.set_defaults(tvonly=False)
     parser.add_argument('-termcrit', metavar='<termcrit>', help='A termination criterion.',
                         default=0.0001)
     parser.add_argument('-optmethod', metavar='<optmethod>', help='Optimization method: em or block.',
@@ -250,7 +250,7 @@ if __name__ == "__main__":
         finalsampname = nodircols[0]
 
 
-        depthinfo = upa_util.bash_command("samtools depth " + sample + ".bam", verbose, cmdfile, logfile)
+        # depthinfo = upa_util.bash_command("samtools depth " + sample + ".bam", False, cmdfile, logfile)
 
         mpileupcmd = ("bcftools mpileup -q " + q + " -d 8000 -Ou -f " + ref + " " + sample + ".bam")
         if regionrestrict:
@@ -277,6 +277,8 @@ if __name__ == "__main__":
             vcflist.append(sample + ".vcf.gz")
 
 
+
+
     print "\nMerging sample VCF files..."
     vcfmergecmd = "bcftools merge -Ov -o " + bcname + "-MERGED.vcf "
     if regionrestrict:
@@ -284,7 +286,7 @@ if __name__ == "__main__":
     if mergebamfile:
         mergebambase = mergebamfile.rsplit(".", 1)[0]
         mergevcffile = mergebambase + ".vcf.gz"
-        depthinfo = upa_util.bash_command("samtools depth " + mergebamfile, verbose, cmdfile, logfile)
+        # depthinfo = upa_util.bash_command("samtools depth " + mergebamfile, False, cmdfile, logfile)
         mpileupcmd = ("bcftools mpileup -q " + q + " -d 8000 -Ou -f " + ref + " " + mergebamfile)
         if regionrestrict:
             mpileupcmd = mpileupcmd + " -r " + regionrestrict
@@ -331,8 +333,7 @@ if __name__ == "__main__":
                     bcname + "-MERGED.vcf.gz")  # Overwrite with imputed sequence so pipeline knows which to use
 
     print "Converting " + bcname + ".vcf to PED format"
-    upa_util.bash_command(
-        "plink --vcf " + bcname + "-MERGED.vcf --double-id --allow-extra-chr --missing-phenotype 2 --recode12 --out " + bcname, verbose, cmdfile, logfile)
+    upa_util.bash_command("plink --vcf " + bcname + "-MERGED.vcf --double-id --allow-extra-chr --missing-phenotype 2 --recode 12 --out " + bcname, verbose, cmdfile, logfile)
 
     # Alter for pops
     if poplistfile:
