@@ -13,6 +13,44 @@ import os
 import progressbar
 import upa_util
 
+
+
+def gen_reg_line(sample, mindepth, maxgap, cmdfile, logfile):
+    regline = ""
+    depthinfo = upa_util.bash_command("samtools depth " + sample, False, cmdfile, logfile)
+
+    depthlines = depthinfo.split("\n")
+    curstart = 0
+    lastpos = 0
+    firstthrough = True
+    for dline in depthlines:
+        dcols = dline.split("\t")
+        if len(dcols) < 3:
+            continue
+        curpos = int(dcols[1])
+        curdepth = int(dcols[2])
+        if firstthrough:
+            if curdepth >= mindepth:
+                curstart = curpos
+                firstthrough = False
+        else:
+            if curpos <= lastpos + maxgap:  # Continuous run
+                if curdepth >= mindepth:
+                    pass
+                else:  # depth too small, stop here
+                    curend = lastpos
+                    # regionsfile.write(dcols[0] + "\t" + str(curstart) + "\t" + str(curend) + "\n")
+                    regline = regline + str(curstart) + "-" + str(curend) + ";"
+                    curstart = curpos
+            else:  # discontinous
+                curend = lastpos
+                # regionsfile.write(dcols[0] + "\t" + str(curstart) + "\t" + str(curend) + "\n")
+                regline = regline + str(curstart) + "-" + str(curend) + ";"
+                curstart = curpos
+        lastpos = curpos
+    return regline
+
+
 def haplogrep_gen_hsd(flist, mindepth, maxgap, ref, bcname, cmdfile, logfile):
     flength = len(flist)
     # Generate a consensus sequence using samtools mpileup
@@ -25,8 +63,8 @@ def haplogrep_gen_hsd(flist, mindepth, maxgap, ref, bcname, cmdfile, logfile):
 
         fbamlist.append(sample + ".bam")
         # Get list of specified depth
-        regionsfile = open(sample + "-regions.txt", 'w')
-        regionsfile.write("CHROM\tPOS\tPOS_TO\n")
+        # regionsfile = open(sample + "-regions.txt", 'w')
+        # regionsfile.write("CHROM\tPOS\tPOS_TO\n")
         regline = ""
 
         depthinfo = upa_util.bash_command("samtools depth " + sample + ".bam", False, cmdfile, logfile)
@@ -51,12 +89,12 @@ def haplogrep_gen_hsd(flist, mindepth, maxgap, ref, bcname, cmdfile, logfile):
                         pass
                     else:  # depth too small, stop here
                         curend = lastpos
-                        regionsfile.write(dcols[0] + "\t" + str(curstart) + "\t" + str(curend) + "\n")
+                        # regionsfile.write(dcols[0] + "\t" + str(curstart) + "\t" + str(curend) + "\n")
                         regline = regline + str(curstart) + "-" + str(curend) + ";"
                         curstart = curpos
                 else:  # discontinous
                     curend = lastpos
-                    regionsfile.write(dcols[0] + "\t" + str(curstart) + "\t" + str(curend) + "\n")
+                    # regionsfile.write(dcols[0] + "\t" + str(curstart) + "\t" + str(curend) + "\n")
                     regline = regline + str(curstart) + "-" + str(curend) + ";"
                     curstart = curpos
             lastpos = curpos
@@ -66,7 +104,7 @@ def haplogrep_gen_hsd(flist, mindepth, maxgap, ref, bcname, cmdfile, logfile):
     for fbam in fbamlist:
         mtmcmd = mtmcmd + fbam + " "
 
-    mtmcmd = mtmcmd + "| bcftools call -V indels --ploidy 1 -Ov -m -v -o " + bcname + ".vcf"
+    mtmcmd = mtmcmd + "| bcftools call -V indels --ploidy 1 -Ov -m -v -o " + bcname + "-4hgrp.vcf"
 
     upa_util.bash_command(mtmcmd, False, cmdfile, logfile)
     return regdic

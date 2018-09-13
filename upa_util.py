@@ -27,6 +27,15 @@ def bash_command(cmd, verbose, cmdfile, logfile):
     logfile.write(stderr)
     return stdout
 
+def name_strip(orig_name):
+    nodir = os.path.basename(orig_name)
+    dotsplits = nodir.split(".")
+    dotsplit = dotsplits[0]
+    nounder = dotsplit.replace("_", "-")
+    finalname = nounder[:15]
+    return finalname
+
+
 def vcf_name_strip(vcffilename):
     basecols = vcffilename.split(".")
     vcfstrippedname = basecols[0]
@@ -45,13 +54,13 @@ def vcf_name_strip(vcffilename):
                 orig_names = cols[9:]  # If so, remaining columns are the genotypes
                 for orig_name in orig_names:
 
-                    nodir = os.path.basename(orig_name)
-                    dotsplits = nodir.split(".")
-                    dotsplit = dotsplits[0]
-                    nounder = dotsplit.replace("_", "-")
-                    finalname = nounder[:15]
+                    # nodir = os.path.basename(orig_name)
+                    # dotsplits = nodir.split(".")
+                    # dotsplit = dotsplits[0]
+                    # nounder = dotsplit.replace("_", "-")
+                    # finalname = nounder[:15]
 
-                    fixedgenos.append(finalname)
+                    fixedgenos.append(name_strip(orig_name))
                 outstrip.write('\t'.join(fixedgenos))
                 outstrip.write("\n")
             else:

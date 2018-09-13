@@ -2,7 +2,7 @@
 
 #####################################
 #####        HPG Lab            #####
-#####    updated July 2018      #####
+#####    updated Sept 2018      #####
 #####       MJJ                 #####
 #####################################
 
@@ -146,6 +146,7 @@ if __name__ == "__main__":
     mergebamfile = args.mergebamfile
     mito = bool(args.mito)
     ychr = bool(args.ychr)
+    yhaplo = args.yhaplo
     maxdepth = args.maxdepth
     maxheight = args.maxheight
     nsize = args.nsize
@@ -238,55 +239,56 @@ if __name__ == "__main__":
             sample = flist[i]
             upa_util.bash_command("samtools index " + sample + ".bam", verbose, cmdfile, logfile)
 
-    # CREATE MERGED VCF
+
+    regdic = {}
+    if mito:
+        print "\nCreating Region dictionary..."
+        vcflist = []
+        bar = progressbar.ProgressBar()
+        for i in bar(range(flength)):
+            sample = flist[i]
+            stripname = upa_util.name_strip(sample)
+            regdic[stripname] = upa_mito.gen_reg_line(sample+".bam", mindepth, maxgap, cmdfile, logfile)
+
+
+    # CREATE MERGED VCF of samples
     print "\nCreating mpileup consensus and writing as a VCF..."
     vcflist = []
-    bar = progressbar.ProgressBar()
-    for i in bar(range(flength)):
+    mpileupcmd = "bcftools mpileup -I -d 8000 -Ov -f " + ref + " "
+    for i in range(flength):
         sample = flist[i]
 
         nodir = os.path.basename(sample)
         nodircols = nodir.split(".")
         finalsampname = nodircols[0]
+        mpileupcmd = mpileupcmd + sample + ".bam" + " "
+
+    if regionrestrict:
+        mpileupcmd = mpileupcmd + " -r " + regionrestrict
+    mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + bcname + "-samples.vcf.gz - "
+    if diploid:
+        mpileupcmd = mpileupcmd + " --ploidy 2 "
+    else:
+        mpileupcmd = mpileupcmd + " --ploidy 1 "
+
+    upa_util.bash_command(mpileupcmd, False, cmdfile, logfile)
 
 
-        # depthinfo = upa_util.bash_command("samtools depth " + sample + ".bam", False, cmdfile, logfile)
+    if vcfchromrename:
+        renamefile = wd + "/" + vcfchromrename
+        upa_util.bash_command("bcftools annotate --rename-chrs  " + renamefile + " " + bcname + "-samples.vcf.gz -Oz -o " + bcname + "-samples.tmp.vcf.gz", verbose, cmdfile, logfile)
+	shutil.move(bcname + "-samples.tmp.vcf.gz" ,  bcname + "-samples.vcf.gz" )
+    upa_util.bash_command("bcftools index -f " +  bcname + "-samples.vcf.gz", verbose, cmdfile, logfile)
 
-        mpileupcmd = ("bcftools mpileup -q " + q + " -d 8000 -Ou -f " + ref + " " + sample + ".bam")
-        if regionrestrict:
-            mpileupcmd = mpileupcmd + " -r " + regionrestrict
-        mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + sample + ".vcf.gz - "
-
-        if diploid:
-            mpileupcmd = mpileupcmd + " --ploidy 2 "
-        else:
-            mpileupcmd = mpileupcmd + " --ploidy 1 "
-
-        upa_util.bash_command(mpileupcmd, verbose, cmdfile, logfile)
-
-
-        upa_util.bash_command("bcftools index -f " + sample + ".vcf.gz", verbose, cmdfile, logfile)
-
-        if vcfchromrename:
-            renamefile = wd + "/" + vcfchromrename
-            upa_util.bash_command(
-                "bcftools annotate --rename-chrs  " + renamefile + " " + sample + ".vcf.gz -Oz -o " + sample + ".a.vcf.gz", verbose, cmdfile, logfile)
-            upa_util.bash_command("bcftools index -f " + sample + ".a.vcf.gz", verbose, cmdfile, logfile)
-            vcflist.append(sample + ".a.vcf.gz")
-        else:
-            vcflist.append(sample + ".vcf.gz")
-
-
-
-
-    print "\nMerging sample VCF files..."
     vcfmergecmd = "bcftools merge -Ov -o " + bcname + "-MERGED.vcf "
     if regionrestrict:
         vcfmergecmd = vcfmergecmd + "-r " + regionrestrict + " "
+
     if mergebamfile:
+
+        print "\nMerging sample VCF file with external BAM reference" + mergebamfile   + "..."
         mergebambase = mergebamfile.rsplit(".", 1)[0]
         mergevcffile = mergebambase + ".vcf.gz"
-        # depthinfo = upa_util.bash_command("samtools depth " + mergebamfile, False, cmdfile, logfile)
         mpileupcmd = ("bcftools mpileup -q " + q + " -d 8000 -Ou -f " + ref + " " + mergebamfile)
         if regionrestrict:
             mpileupcmd = mpileupcmd + " -r " + regionrestrict
@@ -305,17 +307,19 @@ if __name__ == "__main__":
         print "\nWARNING: This will fail in a VERY ugly way if this file and all your files were not mapped using the "
         print "same reference sequence  AND all the chromosomes are named using the same convention!"
         vcfmergecmd = vcfmergecmd + mergevcffile + " "
-    for vcff in vcflist:
-        vcfmergecmd = vcfmergecmd + vcff + " "
 
-    upa_util.bash_command(vcfmergecmd, True, cmdfile, logfile)
+    vcfmergecmd = vcfmergecmd + bcname + "-samples.vcf.gz"
 
+    if mergebamfile or mergevcffile:
+        upa_util.bash_command(vcfmergecmd, True, cmdfile, logfile)
+    else:
+        with gzip.open(bcname + "-samples.vcf.gz", 'rb') as f_in, open(bcname + "-MERGED.vcf", 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
 
-    print "Stripping long names from VCF genotypes. This should also match sample names to either the second coolumn name of a barcode file or the first element of the file name on the a BAM file list."
+    print "Stripping long names from VCF genotypes. This should also match sample names to either the second column name of a barcode file or the first element of the file name on the a BAM file list."
     upa_util.vcf_name_strip(bcname + "-MERGED.vcf")
 
     upa_util.bash_command("bcftools index -f " + bcname + "-MERGED.vcf", verbose, cmdfile, logfile)
-
 
     # IMPUTOR
     if imputor:
@@ -350,8 +354,11 @@ if __name__ == "__main__":
 
     if mito:
         regdic = upa_mito.haplogrep_gen_hsd(flist, mindepth, maxgap, ref, bcname, cmdfile, logfile)
+
+        print "Stripping long names from VCF genotypes. This should also match sample names to either the second column name of a barcode file or the first element of the file name on the a BAM file list."
+        upa_util.vcf_name_strip(bcname + "-4hgrp.vcf")
         if haplogrepjava:
-            upa_mito.haplogrep_java(bcname + ".vcf", regdic, cmdfile, logfile)
+            upa_mito.haplogrep_java(bcname + "-4hgrp.vcf", regdic, cmdfile, logfile)
 
     if admixture:
         print "Running Admixture..."
