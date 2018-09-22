@@ -92,15 +92,15 @@ def poplist_alter(poplistfile, namebase):
 
         if pedcols[1] in poplist:
             pedcols[0] = poplist[pedcols[1]]
-        newpedline = '\t'.join(pedcols)
-        newpedline = newpedline + "\n"
-        pedtmp.write(newpedline)
+            newpedline = '\t'.join(pedcols)
+            newpedline = newpedline + "\n"
+            pedtmp.write(newpedline)
     pedfiled.close()
     pedtmp.close()
     shutil.move("pedtemp.ped", pedfilename)
     return pedfilename
 
-def eigenstrat_convert(bcbase):
+def eigenstrat_convert(bcbase, verbose, cmdfile, logfile):
     eigenname = "par." + bcbase + "PED.EIGENSTRAT"
     eigennout = open(eigenname, 'w')
     eigennout.write("genotypename:    ")
@@ -124,4 +124,5 @@ def eigenstrat_convert(bcbase):
     eigennout.write("familynames:     NO\n")
     eigennout.close()
 
-    bash_command("convertf -p " + eigenname)
+    bash_command("convertf -p " + eigenname, verbose, cmdfile, logfile)
+    return eigenname
