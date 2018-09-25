@@ -304,8 +304,8 @@ if __name__ == "__main__":
 
     if vcfchromrename:
         renamefile = wd + "/" + vcfchromrename
-        upa_util.bash_command("bcftools annotate --rename-chrs  " + renamefile + " " + samplevcffile + " -Ov -o " + bcname + "upatmp.vcf.gz", verbose, cmdfile, logfile)
-        shutil.move(bcname + "upatmp.vcf",  samplevcffile )
+        upa_util.bash_command("bcftools annotate --rename-chrs  " + renamefile + " " + samplevcffile + " -Oz -o " + bcname + "upatmp.vcf.gz", verbose, cmdfile, logfile)
+        shutil.move(bcname + "upatmp.vcf.gz",  samplevcffile )
         upa_util.bash_command("bcftools index -f " + samplevcffile, verbose, cmdfile, logfile)
 
     vcfmergecmd = "bcftools merge -Ov -o " + mergedvcfname + " "
