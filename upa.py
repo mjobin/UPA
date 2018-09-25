@@ -52,11 +52,11 @@ if __name__ == "__main__":
                                                  "1. does stuff.\n\t"
                                                  "- ", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('-bc_file', metavar='<bc_file>', help='location of barcode files, Must have a newline at end.',
+    parser.add_argument('-bc_file', metavar='<bc_file>', help='Location of barcode files, Must have a newline at end.',
                         default="")
-    parser.add_argument('-bc_leftspec', metavar='<bc_leftspec>', help='extensions or name to the left of reference.',
+    parser.add_argument('-bc_leftspec', metavar='<bc_leftspec>', help='Extensions or name to the left of reference.',
                         default=".M.cf.")
-    parser.add_argument('-bc_rightspec', metavar='<bc_rightspec>', help='extensions or name to the right of quality.',
+    parser.add_argument('-bc_rightspec', metavar='<bc_rightspec>', help='Extensions or name to the right of quality.',
                         default=".s")
     parser.add_argument('-bam_list', metavar='<bam_list>', help='List of BAM files', default="")
     parser.add_argument('-vcf_file', metavar='<vcf_file>', help='User-processed VCF file.', default="")
@@ -124,7 +124,7 @@ if __name__ == "__main__":
                         help='Location of yhaplo. Leave blank to prevent it from running.',
                         default='')
     parser.add_argument('-poplistfile', metavar='<poplistfile>',
-                        help='Text file where the FIRST column is the indiviodual and the THIRD coumn is the population. Can be the same file as your plink keeplist',
+                        help='Text file where the FIRST column is the population and the Second coumn is the individual. Can be the same file as your plink keeplist',
                         default='')
     parser.add_argument('-lowk', metavar='<lowk>', help='Lowest K value for Admixture run',
                         default=1)
@@ -158,6 +158,11 @@ if __name__ == "__main__":
     parser.add_argument('-smartpca', dest='smartpca', help='smartpca.',
                         action='store_true')
     parser.set_defaults(smartpca=False)
+    parser.add_argument('-ancient', dest='ancient', help='Turn on aDNA switches.',
+                        action='store_true')
+    parser.set_defaults(ancient=False)
+    parser.add_argument('-scriptsloc', metavar='<scriptsloc>', help='Location of external scripts.',
+                        default='/data/scripts/')
 
 
     # Parsing args
@@ -195,6 +200,7 @@ if __name__ == "__main__":
     admixture = bool(args.admixture)
     snprelatepca = bool(args.snprelatepca)
     smartpca = bool(args.smartpca)
+    ancient = bool(args.ancient)
 
     # adpipe
     lowk = int(args.lowk)
@@ -208,6 +214,7 @@ if __name__ == "__main__":
     maxgap = int(args.maxgap)
     mindepth = int(args.mindepth)
     haplogrepjava = bool(args.haplogrepjava)
+    scriptsloc = args.scriptsloc
 
     # Setup
     os.chdir(wd)
@@ -370,13 +377,13 @@ if __name__ == "__main__":
     if poplistfile:
         pedfilename = upa_util.poplist_alter(poplistfile, bcname)
 
-
     if snprelatepca:
         print "\nRunning SnpRelatePCA..."
-        upa_util.bash_command("Rscript /data/scripts/snprelatepca.R " + bcname + " " + threads, verbose, cmdfile, logfile)
+        upa_util.bash_command("Rscript " + scriptsloc + "snprelatepca.R " + bcname + " " + threads, verbose, cmdfile, logfile)
+
 
     print "\nConvert to EIGENSTRAT format..."
-    eigenparname = upa_util.eigenstrat_convert(bcname, verbose, cmdfile, logfile, diploid)
+    eigenparname = upa_util.eigenstrat_convert(bcname, verbose, cmdfile, logfile, diploid, ancient)
 
     if smartpca:
         smartpcacmd = "smartpca -p " + eigenparname
@@ -386,12 +393,12 @@ if __name__ == "__main__":
         upa_util.bash_command(yhaplo + "/callHaplogroups.py -i " + mergedvcfname, verbose, cmdfile, logfile)
 
     if mito:
-        regdic = upa_mito.haplogrep_gen_hsd(flist, mindepth, maxgap, ref, bcname, cmdfile, logfile)
+        upa_mito.haplogrep_gen_hsd(flist, ref, bcname, regdic, cmdfile, logfile)
 
         print "Stripping long names from VCF genotypes. This should also match sample names to either the second column name of a barcode file or the first element of the file name on the a BAM file list."
         upa_util.vcf_name_strip(bcname + "-4hgrp.vcf")
         if haplogrepjava:
-            upa_mito.haplogrep_java(bcname + "-4hgrp.vcf", regdic, cmdfile, logfile)
+            upa_mito.haplogrep_java(bcname + "-4hgrp.vcf", regdic, scriptsloc, cmdfile, logfile)
 
     if admixture:
         print "Running Admixture..."
