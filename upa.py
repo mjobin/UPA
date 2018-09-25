@@ -20,6 +20,30 @@ import upa_util
 import upa_mito
 
 
+def bammpileup():
+    print "\nCreating mpileup consensus and writing as a VCF..."
+    vcflist = []
+    mpileupcmd = "bcftools mpileup -I -d 8000 -Ov -f " + ref + " "
+    for i in range(flength):
+        sample = flist[i]
+
+        nodir = os.path.basename(sample)
+        nodircols = nodir.split(".")
+        finalsampname = nodircols[0]
+        mpileupcmd = mpileupcmd + sample + ".bam" + " "
+
+    if regionrestrict:
+        mpileupcmd = mpileupcmd + " -r " + regionrestrict
+    mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + bcname + "-samples.vcf.gz - "
+    if diploid:
+        mpileupcmd = mpileupcmd + " --ploidy 2 "
+    else:
+        mpileupcmd = mpileupcmd + " --ploidy 1 "
+
+    upa_util.bash_command(mpileupcmd, False, cmdfile, logfile)
+    return bcname + "-samples.vcf.gz"
+
+
 if __name__ == "__main__":
 
     print "\n****************\nUPA\n****************\n"
@@ -34,7 +58,8 @@ if __name__ == "__main__":
                         default=".M.cf.")
     parser.add_argument('-bc_rightspec', metavar='<bc_rightspec>', help='extensions or name to the right of quality.',
                         default=".s")
-    parser.add_argument('-bam_list', metavar='<bam_list', help='List of BAM files', default="")
+    parser.add_argument('-bam_list', metavar='<bam_list>', help='List of BAM files', default="")
+    parser.add_argument('-vcf_file', metavar='<vcf_file>', help='User-processed VCF file.', default="")
     parser.add_argument('-wd', metavar='<wd>', help='Working directory. Defaults to current.', default='.')
     parser.add_argument('-verbose', dest='verbose', help='Print stdout and stderr to console.',
                         action='store_true')
@@ -75,6 +100,9 @@ if __name__ == "__main__":
     parser.add_argument('-imputor', dest='imputor', help='Impute and tree construction',
                         action='store_true')
     parser.set_defaults(imputor=False)
+    parser.add_argument('-imptree', metavar='<imptree>',
+                        help='Tree for Imputor.',
+                        default="")
     parser.add_argument('-vcfnamestrip', dest='vcfnamestrip', help='Strip long names from VCF entries. Can avoid some errors.',
                         action='store_true')
     parser.set_defaults(vcfnamestrip=False)
@@ -124,6 +152,12 @@ if __name__ == "__main__":
     parser.add_argument('-admixture', dest='admixture', help='Run admixture.',
                         action='store_true')
     parser.set_defaults(admixture=False)
+    parser.add_argument('-snprelatepca', dest='snprelatepca', help='snprelatepca.',
+                        action='store_true')
+    parser.set_defaults(snprelatepca=False)
+    parser.add_argument('-smartpca', dest='smartpca', help='smartpca.',
+                        action='store_true')
+    parser.set_defaults(smartpca=False)
 
 
     # Parsing args
@@ -133,6 +167,7 @@ if __name__ == "__main__":
     bcleftspec = args.bc_leftspec
     bcrightspec = args.bc_rightspec
     bamlist = args.bam_list
+    vcf_file = args.vcf_file
     verbose = bool(args.verbose)
     overwrite = bool(args.overwrite)
     threads = args.threads
@@ -155,8 +190,11 @@ if __name__ == "__main__":
     maxhops = args.maxhops
     poplistfile = args.poplistfile
     imputor = bool(args.imputor)
+    imptree = args.imptree
     vcfnamestrip = bool(args.vcfnamestrip)
     admixture = bool(args.admixture)
+    snprelatepca = bool(args.snprelatepca)
+    smartpca = bool(args.smartpca)
 
     # adpipe
     lowk = int(args.lowk)
@@ -196,9 +234,17 @@ if __name__ == "__main__":
 
 
     bcname = ""
+    samplevcffile = ""
+
+    bampreprocess = True
+    regdic = {}
 
     print "\nChecking for input files..."
-    if bcfile != "" and bamlist == "":
+    if vcf_file:
+        bampreprocess = False
+        bcbase = os.path.basename(vcf_file)
+        bcname, fileext = os.path.splitext(bcbase)
+    elif bcfile != "" and bamlist == "":
         bcbase = os.path.basename(bcfile)
         bcname, fileext = os.path.splitext(bcbase)
         bcin = open(bcfile, 'r')
@@ -231,61 +277,42 @@ if __name__ == "__main__":
     print "Number of entries: ", flength
 
 
+    if bampreprocess:
+        if samindex:
+            print "\nIndexing..."
+            bar = progressbar.ProgressBar()
+            for i in bar(range(flength)):
+                sample = flist[i]
+                upa_util.bash_command("samtools index " + sample + ".bam", verbose, cmdfile, logfile)
 
-    if samindex:
-        print "\nIndexing..."
-        bar = progressbar.ProgressBar()
-        for i in bar(range(flength)):
-            sample = flist[i]
-            upa_util.bash_command("samtools index " + sample + ".bam", verbose, cmdfile, logfile)
+        if mito:
+            print "\nCreating Region dictionary..."
+            vcflist = []
+            bar = progressbar.ProgressBar()
+            for i in bar(range(flength)):
+                sample = flist[i]
+                stripname = upa_util.name_strip(sample)
+                regdic[stripname] = upa_mito.gen_reg_line(sample+".bam", mindepth, maxgap, cmdfile, logfile)
+
+        samplevcffile = bammpileup()
+    else:  #User submitting a VCF file
+        samplevcffile = vcf_file
 
 
-    regdic = {}
-    if mito:
-        print "\nCreating Region dictionary..."
-        vcflist = []
-        bar = progressbar.ProgressBar()
-        for i in bar(range(flength)):
-            sample = flist[i]
-            stripname = upa_util.name_strip(sample)
-            regdic[stripname] = upa_mito.gen_reg_line(sample+".bam", mindepth, maxgap, cmdfile, logfile)
-
-
-    # CREATE MERGED VCF of samples
-    print "\nCreating mpileup consensus and writing as a VCF..."
-    vcflist = []
-    mpileupcmd = "bcftools mpileup -I -d 8000 -Ov -f " + ref + " "
-    for i in range(flength):
-        sample = flist[i]
-
-        nodir = os.path.basename(sample)
-        nodircols = nodir.split(".")
-        finalsampname = nodircols[0]
-        mpileupcmd = mpileupcmd + sample + ".bam" + " "
-
-    if regionrestrict:
-        mpileupcmd = mpileupcmd + " -r " + regionrestrict
-    mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + bcname + "-samples.vcf.gz - "
-    if diploid:
-        mpileupcmd = mpileupcmd + " --ploidy 2 "
-    else:
-        mpileupcmd = mpileupcmd + " --ploidy 1 "
-
-    upa_util.bash_command(mpileupcmd, False, cmdfile, logfile)
-
+    mergedvcfname = bcname + "-MERGED.vcf"
+    mergedvcfgzipname = bcname + "-MERGED.vcf.gz"
 
     if vcfchromrename:
         renamefile = wd + "/" + vcfchromrename
-        upa_util.bash_command("bcftools annotate --rename-chrs  " + renamefile + " " + bcname + "-samples.vcf.gz -Oz -o " + bcname + "-samples.tmp.vcf.gz", verbose, cmdfile, logfile)
-	shutil.move(bcname + "-samples.tmp.vcf.gz" ,  bcname + "-samples.vcf.gz" )
-    upa_util.bash_command("bcftools index -f " +  bcname + "-samples.vcf.gz", verbose, cmdfile, logfile)
+        upa_util.bash_command("bcftools annotate --rename-chrs  " + renamefile + " " + samplevcffile + " -Ov -o " + bcname + "upatmp.vcf.gz", verbose, cmdfile, logfile)
+        shutil.move(bcname + "upatmp.vcf",  samplevcffile )
+        upa_util.bash_command("bcftools index -f " + samplevcffile, verbose, cmdfile, logfile)
 
-    vcfmergecmd = "bcftools merge -Ov -o " + bcname + "-MERGED.vcf "
+    vcfmergecmd = "bcftools merge -Ov -o " + mergedvcfname + " "
     if regionrestrict:
         vcfmergecmd = vcfmergecmd + "-r " + regionrestrict + " "
 
     if mergebamfile:
-
         print "\nMerging sample VCF file with external BAM reference" + mergebamfile   + "..."
         mergebambase = mergebamfile.rsplit(".", 1)[0]
         mergevcffile = mergebambase + ".vcf.gz"
@@ -308,49 +335,55 @@ if __name__ == "__main__":
         print "same reference sequence  AND all the chromosomes are named using the same convention!"
         vcfmergecmd = vcfmergecmd + mergevcffile + " "
 
-    vcfmergecmd = vcfmergecmd + bcname + "-samples.vcf.gz"
+    vcfmergecmd = vcfmergecmd + samplevcffile
 
     if mergebamfile or mergevcffile:
         upa_util.bash_command(vcfmergecmd, True, cmdfile, logfile)
-    else:
-        with gzip.open(bcname + "-samples.vcf.gz", 'rb') as f_in, open(bcname + "-MERGED.vcf", 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)
+    else: # If still gzipped here, unzip
+        if samplevcffile.endswith(".gz"):
+            with gzip.open(samplevcffile, 'rb') as f_in, open(bcname + "-MERGED.vcf", 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        else:
+            shutil.copy(samplevcffile, mergedvcfname)
 
     print "Stripping long names from VCF genotypes. This should also match sample names to either the second column name of a barcode file or the first element of the file name on the a BAM file list."
-    upa_util.vcf_name_strip(bcname + "-MERGED.vcf")
+    upa_util.vcf_name_strip(mergedvcfname)
 
-    upa_util.bash_command("bcftools index -f " + bcname + "-MERGED.vcf", verbose, cmdfile, logfile)
+    upa_util.bash_command("bcftools index -f " + mergedvcfname, verbose, cmdfile, logfile)
 
     # IMPUTOR
     if imputor:
         if diploid:
             print "IMPUTOR works on haploid data only! Exiting."
             exit(1)
-        print "Running IMPUTOR... should only be run for haploid data!"
-        impcmd = "imputor.py -file " + bcname + "-MERGED.vcf -out vcf -maxthreads " + threads + " -ncollect " + ncollect + " -maxheight " + maxheight + " -maxdepth " + maxdepth + " -passes 1 -msize " + msize + " -nsize " + nsize + " -maxhops " + maxhops
+        print "Running IMPUTOR..."
+        impcmd = "imputor.py -file " + mergedvcfname + " -out vcf -maxthreads " + threads + " -ncollect " + ncollect + " -maxheight " + maxheight + " -maxdepth " + maxdepth + " -passes 1 -msize " + msize + " -nsize " + nsize + " -maxhops " + maxhops
         if imptree:
             impcmd = impcmd + " -tree " + imptree
-        upa_util.bash_command_bare(impcmd, True, cmdfile, logfile)
-        with open(bcname + "-MERGED-out.vcf", 'r') as f_in, gzip.open(bcname + "-E.vcf.gz", 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)
-        shutil.move(bcname + "-E.vcf.gz",
-                    bcname + "-MERGED.vcf.gz")  # Overwrite with imputed sequence so pipeline knows which to use
+        upa_util.bash_command(impcmd, True, cmdfile, logfile)
+        shutil.move(bcname + "-MERGED-out.vcf", mergedvcfgzipname)  # Overwrite with imputed sequence so pipeline knows which to use
 
-    print "Converting " + bcname + ".vcf to PED format"
-    upa_util.bash_command("plink --vcf " + bcname + "-MERGED.vcf --double-id --allow-extra-chr --missing-phenotype 2 --recode 12 --out " + bcname, verbose, cmdfile, logfile)
+    print "Converting " + mergedvcfname + " to PED format"
+    upa_util.bash_command("plink --vcf " + mergedvcfname + " --double-id --allow-extra-chr --missing-phenotype 2 --recode 12 --out " + bcname, verbose, cmdfile, logfile)
 
     # Alter for pops
     if poplistfile:
         pedfilename = upa_util.poplist_alter(poplistfile, bcname)
 
-    print "\nRunning SnpRelatePCA..."
-    upa_util.bash_command("Rscript /data/scripts/snprelatepca.R " + bcname + " " + threads, verbose, cmdfile, logfile)
 
-    # # Convert to EIGENSTRAT
-    # upa_convert.eigenstrat_convert(bcbase)
+    if snprelatepca:
+        print "\nRunning SnpRelatePCA..."
+        upa_util.bash_command("Rscript /data/scripts/snprelatepca.R " + bcname + " " + threads, verbose, cmdfile, logfile)
+
+    print "\nConvert to EIGENSTRAT format..."
+    eigenparname = upa_util.eigenstrat_convert(bcname, verbose, cmdfile, logfile, diploid)
+
+    if smartpca:
+        smartpcacmd = "smartpca -p " + eigenparname
+        upa_util.bash_command(smartpcacmd, verbose, cmdfile, logfile)
 
     if ychr:
-        upa_util.bash_command(yhaplo + "/callHaplogroups.py -i " + bcname + "-E-seqout.vcf", verbose, cmdfile, logfile)
+        upa_util.bash_command(yhaplo + "/callHaplogroups.py -i " + mergedvcfname, verbose, cmdfile, logfile)
 
     if mito:
         regdic = upa_mito.haplogrep_gen_hsd(flist, mindepth, maxgap, ref, bcname, cmdfile, logfile)
@@ -382,6 +415,6 @@ if __name__ == "__main__":
     exit(0)
 
 else:
-    print "Not yet configured as a module"
+    print "Not configured as a module"
     exit(1)
 
