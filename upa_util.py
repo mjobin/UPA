@@ -80,7 +80,6 @@ def poplist_alter(poplistfile, namebase):
         popstrip = poplistline.rstrip()
         if len(popstrip) > 0:
             popcols = popstrip.split("\t")
-            print popcols
             poplist[popcols[1]] = popcols[0]
 
     pedfilename = namebase + ".ped"

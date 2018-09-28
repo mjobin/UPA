@@ -18,30 +18,10 @@ import gzip
 import shutil
 import upa_util
 import upa_mito
+import upa_input
 
 
-def bammpileup():
-    print "\nCreating mpileup consensus and writing as a VCF..."
-    vcflist = []
-    mpileupcmd = "bcftools mpileup -I -d 8000 -Ov -f " + ref + " "
-    for i in range(flength):
-        sample = flist[i]
 
-        nodir = os.path.basename(sample)
-        nodircols = nodir.split(".")
-        finalsampname = nodircols[0]
-        mpileupcmd = mpileupcmd + sample + ".bam" + " "
-
-    if regionrestrict:
-        mpileupcmd = mpileupcmd + " -r " + regionrestrict
-    mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + bcname + "-samples.vcf.gz - "
-    if diploid:
-        mpileupcmd = mpileupcmd + " --ploidy 2 "
-    else:
-        mpileupcmd = mpileupcmd + " --ploidy 1 "
-
-    upa_util.bash_command(mpileupcmd, False, cmdfile, logfile)
-    return bcname + "-samples.vcf.gz"
 
 
 if __name__ == "__main__":
@@ -70,7 +50,7 @@ if __name__ == "__main__":
     parser.add_argument('-threads', metavar='<threads>',
                         help='The number of threads to assign to each task when possible',
                         default="23")
-    parser.add_argument('-ref', metavar='<ref>', help='',
+    parser.add_argument('-ref', metavar='<ref>', help='Reference FASTA file.',
                         default='/data/genomes/hg19.fa')
     parser.add_argument('-q', metavar='<q>', help='BWA min quality. 20 provides a fairly low cutoff',
                         default="20")
@@ -79,7 +59,7 @@ if __name__ == "__main__":
     parser.set_defaults(samindex=False)
     parser.add_argument('-diploid', dest='diploid', help='Diploid data.',
                         action='store_true')
-    parser.set_defaults(diploid=False)
+    parser.set_defaults(diploid=True)
     parser.add_argument('-regionrestrict', metavar='<regionrestrict>', help='Restrict to a region.',
                         default='')
     parser.add_argument('-vcfchromrename', metavar='<vcfchromrename>',
@@ -103,9 +83,6 @@ if __name__ == "__main__":
     parser.add_argument('-imptree', metavar='<imptree>',
                         help='Tree for Imputor.',
                         default="")
-    parser.add_argument('-vcfnamestrip', dest='vcfnamestrip', help='Strip long names from VCF entries. Can avoid some errors.',
-                        action='store_true')
-    parser.set_defaults(vcfnamestrip=False)
     parser.add_argument('-maxheight', metavar='<maxheight>',
                         help='Height of search toward root for collecting neighbors.',
                         default="3")
@@ -119,7 +96,7 @@ if __name__ == "__main__":
                         default="2")
     parser.add_argument('-ncollect', metavar='<ncollect>', help='rootward, hops, distance, mono',
                         default='rootward')
-    parser.add_argument('-maxhops', metavar='<maxhops>', help='Number of alternate runs.', default="5")
+    parser.add_argument('-maxhops', metavar='<maxhops>', help='Number of hops to search in hops method.', default="5")
     parser.add_argument('-yhaplo', metavar='<yhaplo>',
                         help='Location of yhaplo. Leave blank to prevent it from running.',
                         default='')
@@ -127,9 +104,9 @@ if __name__ == "__main__":
                         help='Text file where the FIRST column is the population and the Second coumn is the individual. Can be the same file as your plink keeplist',
                         default='')
     parser.add_argument('-lowk', metavar='<lowk>', help='Lowest K value for Admixture run',
-                        default=1)
+                        default=2)
     parser.add_argument('-hik', metavar='<hik>', help='Highest K value for Admixture run',
-                        default=5)
+                        default=10)
     parser.add_argument('-reps', metavar='<reps>', help='Number of replicates to be run at each K',
                         default=10)
     parser.add_argument('-tohaploid', dest='tohaploid', help='Haploid conversion.',
@@ -163,6 +140,22 @@ if __name__ == "__main__":
     parser.set_defaults(ancient=False)
     parser.add_argument('-scriptsloc', metavar='<scriptsloc>', help='Location of external scripts.',
                         default='/data/scripts/')
+    parser.add_argument('-binloc', metavar='<binloc>', help='Location of binary executables.',
+                        default='/usr/local/bin/')
+    parser.add_argument('-stripchr', dest='stripchr', help='Strip chr from your samples chromosome names.',
+                        action='store_true')
+    parser.set_defaults(stripchr=False)
+    parser.add_argument('-addreadgroup', dest='addreadgroup', help='Add read group (RG) back to your sample BAMs.',
+                        action='store_true')
+    parser.set_defaults(addreadgroup=False)
+    parser.add_argument('-callmethod', metavar='<callmethod>', help='Options: bcf, genocaller.',
+                        default='bcf')
+    parser.add_argument('-gcbedfile', metavar='<gcbedfile>', help='UCSC BED file for use with GenoCaller.',
+                        default='')
+    parser.add_argument('-gcindent', metavar='<gcindent>', help='Indent depth for use with GenoCaller.',
+                        default='2')
+
+
 
 
     # Parsing args
@@ -196,11 +189,20 @@ if __name__ == "__main__":
     poplistfile = args.poplistfile
     imputor = bool(args.imputor)
     imptree = args.imptree
-    vcfnamestrip = bool(args.vcfnamestrip)
     admixture = bool(args.admixture)
     snprelatepca = bool(args.snprelatepca)
     smartpca = bool(args.smartpca)
     ancient = bool(args.ancient)
+    scriptsloc = args.scriptsloc
+    binloc = args.binloc
+    stripchr = bool(args.stripchr)
+    addreadgroup = bool(args.addreadgroup)
+    maxgap = int(args.maxgap)
+    mindepth = int(args.mindepth)
+    haplogrepjava = bool(args.haplogrepjava)
+    callmethod = args.callmethod
+    gcbedfile = args.gcbedfile
+    gcindent = args.gcindent
 
     # adpipe
     lowk = int(args.lowk)
@@ -211,10 +213,8 @@ if __name__ == "__main__":
     termcrit = float(args.termcrit)
     optmethod = args.optmethod
 
-    maxgap = int(args.maxgap)
-    mindepth = int(args.mindepth)
-    haplogrepjava = bool(args.haplogrepjava)
-    scriptsloc = args.scriptsloc
+
+
 
     # Setup
     os.chdir(wd)
@@ -232,19 +232,21 @@ if __name__ == "__main__":
 
     flist = []
 
-    # cmdfile.write("Arguments used:")
-    # for arg in vars(args):
-    #     cmdfile.write(arg)
-    #     cmdfile.write("\t")
-    #     # cmdfile.write(getattr(args,arg))
-    #     cmdfile.write("\n")
+    logfile.write("Arguments used:\n")
+    logfile.write("__________________________________________:\n")
+    for arg in vars(args):
+        logfile.write(arg)
+        logfile.write("\t")
+        logfile.write(str(getattr(args, arg)))
+        logfile.write("\n")
 
+    if mito or ychr:
+        diploid = False
 
     bcname = ""
     samplevcffile = ""
-
     bampreprocess = True
-    regdic = {}
+
 
     print "\nChecking for input files..."
     if vcf_file:
@@ -283,8 +285,13 @@ if __name__ == "__main__":
     flength = len(flist)
     print "Number of entries: ", flength
 
+    print "\nProcessing input files..."
 
     if bampreprocess:
+        if stripchr:
+            upa_input.stripchr(flist, verbose, cmdfile, logfile)
+        if addreadgroup:
+            upa_input.addreadgroup(flist, binloc, verbose, cmdfile, logfile)
         if samindex:
             print "\nIndexing..."
             bar = progressbar.ProgressBar()
@@ -292,18 +299,18 @@ if __name__ == "__main__":
                 sample = flist[i]
                 upa_util.bash_command("samtools index " + sample + ".bam", verbose, cmdfile, logfile)
 
-        if mito:
-            print "\nCreating Region dictionary..."
-            vcflist = []
-            bar = progressbar.ProgressBar()
-            for i in bar(range(flength)):
-                sample = flist[i]
-                stripname = upa_util.name_strip(sample)
-                regdic[stripname] = upa_mito.gen_reg_line(sample+".bam", mindepth, maxgap, cmdfile, logfile)
 
-        samplevcffile = bammpileup()
+
+    if callmethod == 'bcf':
+        samplevcffile = upa_input.bcfmpileup(flist, ref, bcname, regionrestrict, diploid, cmdfile, logfile)
+    elif callmethod == 'genocaller':
+        samplevcffile = upa_input.genocaller(flist, gcbedfile, bcname, gcindent, ref, regionrestrict, verbose, cmdfile, logfile)
     else:  #User submitting a VCF file
         samplevcffile = vcf_file
+
+    if samplevcffile == "":
+        print "ERROR. Either specify a calling method for your BAM files or submit a pre-processed VCF file."
+        exit(1)
 
 
     mergedvcfname = bcname + "-MERGED.vcf"
@@ -314,6 +321,10 @@ if __name__ == "__main__":
         upa_util.bash_command("bcftools annotate --rename-chrs  " + renamefile + " " + samplevcffile + " -Oz -o " + bcname + "upatmp.vcf.gz", verbose, cmdfile, logfile)
         shutil.move(bcname + "upatmp.vcf.gz",  samplevcffile )
         upa_util.bash_command("bcftools index -f " + samplevcffile, verbose, cmdfile, logfile)
+
+
+    print "Stripping long names from VCF genotypes. This should also match sample names to either the second column name of a barcode file or the first element of the file name on the a BAM file list."
+    upa_util.vcf_name_strip(samplevcffile)
 
     vcfmergecmd = "bcftools merge -Ov -o " + mergedvcfname + " "
     if regionrestrict:
@@ -329,7 +340,7 @@ if __name__ == "__main__":
         mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + mergevcffile + " - "
 
         if diploid:
-            mpileupcmd = mpileupcmd + " --ploidy 2 "
+            pass
         else:
             mpileupcmd = mpileupcmd + " --ploidy 1 "
 
@@ -342,6 +353,7 @@ if __name__ == "__main__":
         print "same reference sequence  AND all the chromosomes are named using the same convention!"
         vcfmergecmd = vcfmergecmd + mergevcffile + " "
 
+    #Default will not merge an external, but still region restrict
     vcfmergecmd = vcfmergecmd + samplevcffile
 
     if mergebamfile or mergevcffile:
@@ -393,6 +405,14 @@ if __name__ == "__main__":
         upa_util.bash_command(yhaplo + "/callHaplogroups.py -i " + mergedvcfname, verbose, cmdfile, logfile)
 
     if mito:
+        print "\nCreating Region dictionary..."
+        regdic = {}
+        vcflist = []
+        bar = progressbar.ProgressBar()
+        for i in bar(range(flength)):
+            sample = flist[i]
+            stripname = upa_util.name_strip(sample)
+            regdic[stripname] = upa_mito.gen_reg_line(sample+".bam", mindepth, maxgap, cmdfile, logfile)
         upa_mito.haplogrep_gen_hsd(flist, ref, bcname, regdic, cmdfile, logfile)
 
         print "Stripping long names from VCF genotypes. This should also match sample names to either the second column name of a barcode file or the first element of the file name on the a BAM file list."
