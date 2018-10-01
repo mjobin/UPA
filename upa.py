@@ -51,7 +51,7 @@ if __name__ == "__main__":
                         help='The number of threads to assign to each task when possible',
                         default="23")
     parser.add_argument('-ref', metavar='<ref>', help='Reference FASTA file.',
-                        default='/data/genomes/hg19.fa')
+                        default='/data/genomes/onlynumber_nochr_MT_hg19.fa')
     parser.add_argument('-q', metavar='<q>', help='BWA min quality. 20 provides a fairly low cutoff',
                         default="20")
     parser.add_argument('-samindex', dest='samindex', help='Generate indexes for BAM files.',
@@ -154,6 +154,8 @@ if __name__ == "__main__":
                         default='')
     parser.add_argument('-gcindent', metavar='<gcindent>', help='Indent depth for use with GenoCaller.',
                         default='2')
+    parser.add_argument('-plinkgeno', metavar='<plinkgeno>', help='Value for PLINK geno argument.',
+                        default='0.99')
 
 
 
@@ -203,6 +205,7 @@ if __name__ == "__main__":
     callmethod = args.callmethod
     gcbedfile = args.gcbedfile
     gcindent = args.gcindent
+    plinkgeno = args.plinkgeno
 
     # adpipe
     lowk = int(args.lowk)
@@ -288,25 +291,33 @@ if __name__ == "__main__":
     print "\nProcessing input files..."
 
     if bampreprocess:
-        if stripchr:
-            upa_input.stripchr(flist, verbose, cmdfile, logfile)
-        if addreadgroup:
-            upa_input.addreadgroup(flist, binloc, verbose, cmdfile, logfile)
         if samindex:
             print "\nIndexing..."
             bar = progressbar.ProgressBar()
             for i in bar(range(flength)):
                 sample = flist[i]
                 upa_util.bash_command("samtools index " + sample + ".bam", verbose, cmdfile, logfile)
+        if stripchr:
+            upa_input.stripchr(flist, verbose, cmdfile, logfile)
+        if addreadgroup:
+            upa_input.addreadgroup(flist, binloc, verbose, cmdfile, logfile)
+        print "\nIndexing..."
+        bar = progressbar.ProgressBar()
+        for i in bar(range(flength)):
+            sample = flist[i]
+            upa_util.bash_command("samtools index " + sample + ".bam", verbose, cmdfile, logfile)
 
 
-
-    if callmethod == 'bcf':
-        samplevcffile = upa_input.bcfmpileup(flist, ref, bcname, regionrestrict, diploid, cmdfile, logfile)
+    if vcf_file:
+        samplevcffile = vcf_file #User submitting a VCF file
+    elif callmethod == 'bcf':
+        samplevcffile = upa_input.bcfmpileup(flist, ref, bcname, regionrestrict, diploid, q, cmdfile, logfile)
     elif callmethod == 'genocaller':
         samplevcffile = upa_input.genocaller(flist, gcbedfile, bcname, gcindent, ref, regionrestrict, verbose, cmdfile, logfile)
-    else:  #User submitting a VCF file
-        samplevcffile = vcf_file
+    else:
+        print "EROR: Unknown calling method " + callmethod
+        exit(1)
+
 
     if samplevcffile == "":
         print "ERROR. Either specify a calling method for your BAM files or submit a pre-processed VCF file."
@@ -422,7 +433,7 @@ if __name__ == "__main__":
 
     if admixture:
         print "Running Admixture..."
-        upa_util.bash_command("plink --file " + bcname + " --make-bed --allow-extra-chr --out " + bcname, verbose, cmdfile, logfile)
+        upa_util.bash_command("plink --file " + bcname + " --make-bed --geno " + plinkgeno + " --allow-extra-chr --out " + bcname, verbose, cmdfile, logfile)
         adpipeline = "adpipe.py -wd " + wd + " -file " + bcname
         if overwrite:
             adpipeline += " -overwrite"
