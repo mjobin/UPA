@@ -109,13 +109,13 @@ if __name__ == "__main__":
                         default=10)
     parser.add_argument('-reps', metavar='<reps>', help='Number of replicates to be run at each K',
                         default=10)
-    parser.add_argument('-tohaploid', dest='tohaploid', help='Haploid conversion.',
+    parser.add_argument('-tohaploid', dest='tohaploid', help='Convert to haploid before running Admixture.',
                         action='store_true')
     parser.set_defaults(tohaploid=False)
     parser.add_argument('-tvonly', dest='tvonly', help='Transversions only.',
                         action='store_true')
     parser.set_defaults(tvonly=False)
-    parser.add_argument('-termcrit', metavar='<termcrit>', help='A termination criterion.',
+    parser.add_argument('-termcrit', metavar='<termcrit>', help='Termination criterion for ADMIXTURE.',
                         default=0.0001)
     parser.add_argument('-optmethod', metavar='<optmethod>', help='Optimization method: em or block.',
                         default='block')
@@ -394,7 +394,7 @@ if __name__ == "__main__":
         shutil.move(bcname + "-MERGED-out.vcf", mergedvcfgzipname)  # Overwrite with imputed sequence so pipeline knows which to use
 
     print "Converting " + mergedvcfname + " to PED format"
-    upa_util.bash_command("plink --vcf " + mergedvcfname + " --double-id --allow-extra-chr --missing-phenotype 2 --recode 12 --out " + bcname, verbose, cmdfile, logfile)
+    plinkout = upa_util.bash_command("plink --vcf " + mergedvcfname + " --double-id --allow-extra-chr --missing-phenotype 2 --recode 12 --out " + bcname, verbose, cmdfile, logfile)
 
     # Alter for pops
     if poplistfile:
@@ -409,8 +409,7 @@ if __name__ == "__main__":
     eigenparname = upa_util.eigenstrat_convert(bcname, verbose, cmdfile, logfile, diploid, ancient)
 
     if smartpca:
-        smartpcacmd = "smartpca -p " + eigenparname
-        upa_util.bash_command(smartpcacmd, verbose, cmdfile, logfile)
+        upa_util.eigenstrat_smartpca(bcname, diploid, ancient, verbose, cmdfile, logfile)
 
     if ychr:
         upa_util.bash_command(yhaplo + "/callHaplogroups.py -i " + mergedvcfname, verbose, cmdfile, logfile)
@@ -423,13 +422,15 @@ if __name__ == "__main__":
         for i in bar(range(flength)):
             sample = flist[i]
             stripname = upa_util.name_strip(sample)
-            regdic[stripname] = upa_mito.gen_reg_line(sample+".bam", mindepth, maxgap, cmdfile, logfile)
+            regdic[stripname] = upa_mito.gen_reg_line(sample + ".bam", mindepth, maxgap, cmdfile, logfile)
+        if os.path.isfile("upadepthout.txt"):
+            os.remove("upadepthout.txt")
         upa_mito.haplogrep_gen_hsd(flist, ref, bcname, regdic, cmdfile, logfile)
 
         print "Stripping long names from VCF genotypes. This should also match sample names to either the second column name of a barcode file or the first element of the file name on the a BAM file list."
         upa_util.vcf_name_strip(bcname + "-4hgrp.vcf")
         if haplogrepjava:
-            upa_mito.haplogrep_java(bcname + "-4hgrp.vcf", regdic, scriptsloc, cmdfile, logfile)
+            upa_mito.haplogrep_java(bcname + "-4hgrp.vcf", scriptsloc, cmdfile, logfile)
 
     if admixture:
         print "Running Admixture..."

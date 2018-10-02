@@ -17,7 +17,10 @@ import upa_util
 
 def gen_reg_line(sample, mindepth, maxgap, cmdfile, logfile):
     regline = ""
+    # depthinfo = upa_util.bash_command("samtools depth " + sample + " > upadepthout.txt", False, cmdfile, logfile)
+
     depthinfo = upa_util.bash_command("samtools depth " + sample, False, cmdfile, logfile)
+
 
     depthlines = depthinfo.split("\n")
     curstart = 0
@@ -68,7 +71,7 @@ def haplogrep_gen_hsd(flist, ref, bcname, regdic, cmdfile, logfile):
     upa_util.bash_command(mtmcmd, False, cmdfile, logfile)
     return regdic
 
-def haplogrep_java(invcf, regdic, scriptsloc, cmdfile, logfile):
+def haplogrep_java(invcf, scriptsloc, cmdfile, logfile):
     filebase, filext = os.path.splitext(invcf)
 
     upa_util.bash_command("java -jar " + scriptsloc + "haplogrep-2.1.1.jar --format vcf --in " + invcf + " --out " + filebase + ".hsd --phylotree 17", False, cmdfile, logfile)

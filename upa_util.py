@@ -120,6 +120,26 @@ def eigenstrat_convert(bcbase, verbose, cmdfile, logfile, diploid, ancient):
     eigennout.write("indivoutname:    ")
     eigennout.write(bcbase)
     eigennout.write(".ind\n")
+    eigennout.write("familynames:    YES\n")
+    eigennout.close()
+
+    bash_command("convertf -p " + eigenname, verbose, cmdfile, logfile)
+    return eigenname
+
+
+
+def eigenstrat_smartpca(bcbase, diploid, ancient, verbose, cmdfile, logfile):
+    eigenname = "par.smartpca" + bcbase
+    eigennout = open(eigenname, 'w')
+    eigennout.write("genotypename:    ")
+    eigennout.write(bcbase)
+    eigennout.write(".geno\n")
+    eigennout.write("snpname:         ")
+    eigennout.write(bcbase)
+    eigennout.write(".snp\n")
+    eigennout.write("indivname:       ")
+    eigennout.write(bcbase)
+    eigennout.write(".ind\n")
     eigennout.write("evecoutname:    ")
     eigennout.write(bcbase)
     eigennout.write(".evec\n")
@@ -132,8 +152,8 @@ def eigenstrat_convert(bcbase, verbose, cmdfile, logfile, diploid, ancient):
     else:
         eigennout.write("fstonly:     YES\n")
     if ancient:
-        eigenout.write("lsqproject:     YES\n")
+        eigennout.write("lsqproject:     YES\n")
     eigennout.close()
 
-    bash_command("convertf -p " + eigenname, verbose, cmdfile, logfile)
+    bash_command("smartpca -p " + eigenname, verbose, cmdfile, logfile)
     return eigenname
