@@ -157,3 +157,32 @@ def eigenstrat_smartpca(bcbase, diploid, ancient, verbose, cmdfile, logfile):
 
     bash_command("smartpca -p " + eigenname, verbose, cmdfile, logfile)
     return eigenname
+
+def createrefallelelist(ref, other):
+
+    #Create a dictionary based on position
+    reflines = ref.split("\n")
+
+    aflines = []
+
+    refdict = {}
+    for refline in reflines:
+        refcols = refline.split()
+        if len(refcols) > 4:
+            refdict[refcols[1]] = refcols
+
+    otherlines = other.split("\n")
+    otherdict = {}
+    for otherline in otherlines:
+        othercols = otherline.split()
+        if len(othercols) > 4:
+            otherdict[othercols[1]] = othercols
+
+    for key in refdict:
+        if key in otherdict:
+            aflines.append(otherdict[key][2] + " " + refdict[key][3] + "\n")
+
+    return aflines
+
+
+

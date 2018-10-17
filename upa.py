@@ -19,6 +19,7 @@ import shutil
 import upa_util
 import upa_mito
 import upa_input
+from Bio import bgzf
 
 
 
@@ -156,6 +157,12 @@ if __name__ == "__main__":
                         default='2')
     parser.add_argument('-plinkgeno', metavar='<plinkgeno>', help='Value for PLINK geno argument.',
                         default='0.99')
+    parser.add_argument('-refalleles', dest='refalleles', help='Change the REF allele of mergevcffile to match that of your samples.',
+                        action='store_true')
+    parser.set_defaults(addreadgroup=False)
+    parser.add_argument('-annotate', dest='annotate', help='Annotate from mergevcffile to samples VCF.',
+                        action='store_true')
+    parser.set_defaults(addreadgroup=False)
 
 
 
@@ -206,6 +213,8 @@ if __name__ == "__main__":
     gcbedfile = args.gcbedfile
     gcindent = args.gcindent
     plinkgeno = args.plinkgeno
+    refalleles = bool(args.refalleles)
+    annotate = bool(args.annotate)
 
     # adpipe
     lowk = int(args.lowk)
@@ -291,31 +300,32 @@ if __name__ == "__main__":
     print "\nProcessing input files..."
 
     if bampreprocess:
+        if stripchr:
+            print("\nStripping chr")
+            upa_input.stripchr(flist, verbose, cmdfile, logfile)
+        if addreadgroup:
+            print("\nAdding read group...")
+            upa_input.addreadgroup(flist, binloc, verbose, cmdfile, logfile)
         if samindex:
             print "\nIndexing..."
             bar = progressbar.ProgressBar()
             for i in bar(range(flength)):
                 sample = flist[i]
                 upa_util.bash_command("samtools index " + sample + ".bam", verbose, cmdfile, logfile)
-        if stripchr:
-            upa_input.stripchr(flist, verbose, cmdfile, logfile)
-        if addreadgroup:
-            upa_input.addreadgroup(flist, binloc, verbose, cmdfile, logfile)
-        print "\nIndexing..."
-        bar = progressbar.ProgressBar()
-        for i in bar(range(flength)):
-            sample = flist[i]
-            upa_util.bash_command("samtools index " + sample + ".bam", verbose, cmdfile, logfile)
 
 
     if vcf_file:
-        samplevcffile = vcf_file #User submitting a VCF file
+        if os.path.isfile(vcf_file):
+            samplevcffile = vcf_file #User submitting a VCF file
+        else:
+            print "ERROR: Cannot find " + vcf_file
+            exit(1)
     elif callmethod == 'bcf':
         samplevcffile = upa_input.bcfmpileup(flist, ref, bcname, regionrestrict, diploid, q, cmdfile, logfile)
     elif callmethod == 'genocaller':
         samplevcffile = upa_input.genocaller(flist, gcbedfile, bcname, gcindent, ref, regionrestrict, verbose, cmdfile, logfile)
     else:
-        print "EROR: Unknown calling method " + callmethod
+        print "ERROR: Unknown calling method " + callmethod
         exit(1)
 
 
@@ -326,6 +336,40 @@ if __name__ == "__main__":
 
     mergedvcfname = bcname + "-MERGED.vcf"
     mergedvcfgzipname = bcname + "-MERGED.vcf.gz"
+
+    if mergevcffile:
+        if not os.path.isfile(mergevcffile):
+            print "ERROR: Cannot find " + mergevcffile
+            exit(1)
+
+    if annotate:
+        print("\nAnnotating...")
+        amcmd = "bcftools annotate --threads " + threads + " -a " + mergevcffile + " -c CHROM,POS,ID " + samplevcffile
+        upa_util.bash_command(amcmd, verbose, cmdfile,logfile)
+
+    if refalleles:
+        print("\nQuerying info from " + samplevcffile + " ...")
+        sampinfo = upa_util.bash_command("bcftools query -f '%CHROM %POS %ID %REF %ALT\\n' " + samplevcffile, verbose, cmdfile, logfile)
+
+        print("\nQuerying info from " + mergevcffile + " ...")
+        merginfo = upa_util.bash_command("bcftools query -f '%CHROM %POS %ID %REF %ALT\\n' " + mergevcffile, verbose, cmdfile, logfile)
+
+        print("\nCreating ref list...")
+        aflines = upa_util.createrefallelelist(sampinfo, merginfo)
+
+        print("\nWriting reference alleles file...")
+        afout = open("upa-af.txt", 'w')
+        for afline in aflines:
+            afout.write(afline)
+        afout.close()
+
+
+        print("\nPConverting " + mergevcffile + " to use reference alleles from " + samplevcffile + " ...")
+        afcmd = "plink --vcf " + mergevcffile + " --reference-allele upa-af.txt --recode vcf-iid --out " + bcname + "-MERGED-FIXED.vcf"
+        upa_util.bash_command(afcmd, verbose, cmdfile,logfile)
+        shutil.move(bcname + "-MERGED-FIXED.vcf", mergevcffile)
+
+
 
     if vcfchromrename:
         renamefile = wd + "/" + vcfchromrename

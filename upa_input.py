@@ -30,7 +30,8 @@ def stripchr(flist, verbose, cmdfile, logfile):
 def addreadgroup(flist, binloc, verbose, cmdfile, logfile):
     for i in range(len(flist)):
         sample = flist[i]
-        addrgcmd = "java -jar " + binloc + "picard.jar AddOrReplaceReadGroups I=" + sample + ".bam O=" + sample + ".intermediate.bam RGID=4 RGLB=" + sample + " RGPL=illumina RGPU=BerkeleyHiSeq RGSM=20 VALIDATION_STRINGENCY=LENIENT"
+        basename = upa_util.name_strip(sample)
+        addrgcmd = "java -jar " + binloc + "picard.jar AddOrReplaceReadGroups I=" + sample + ".bam O=" + sample + ".intermediate.bam RGID=4 RGLB=" + sample + " RGPL=illumina RGPU=BerkeleyHiSeq RGSM=" + basename + " VALIDATION_STRINGENCY=LENIENT"
         upa_util.bash_command(addrgcmd, verbose, cmdfile, logfile)
         shutil.move(sample + ".bam", sample + ".norg.bam")
         shutil.move(sample + ".intermediate.bam", sample + ".bam")
@@ -38,7 +39,7 @@ def addreadgroup(flist, binloc, verbose, cmdfile, logfile):
 
 def bcfmpileup(flist, ref, bcname, regionrestrict, diploid, q, cmdfile, logfile):
     print "\nCreating mpileup consensus using BCFTools and writing as a VCF..."
-    mpileupcmd = "bcftools mpileup -I -d 8000 -Ov -f " + ref + " -q " + q
+    mpileupcmd = "bcftools mpileup -I -C 50 -d 8000 -Ov -f " + ref + " -q " + q + " "
     for i in range(len(flist)):
         sample = flist[i]
         mpileupcmd = mpileupcmd + sample + ".bam" + " "
@@ -62,19 +63,21 @@ def genocaller(flist, bedfile, bcname, indent, ref, regionrestrict, verbose, cmd
         upa_util.bash_command(gccmd, verbose, cmdfile, logfile)
 
         #Must compress to allow bcftools to merge
-        with open(sample + "." + bedfile + ".indent" + str(indent) + ".vcf", 'rb') as f_in, gzip.open(sample + "." + bedfile + ".indent" + str(indent) + ".vcf.gz", 'wb') as f_out:
+        with open(sample + "." + bedfile + ".indent" + str(indent) + ".vcf", 'r') as f_in, gzip.open(sample + "." + bedfile + ".indent" + str(indent) + ".vcf.gz", 'wb') as f_out:
             shutil.copyfileobj(f_in, f_out)
 
         samplevcfname = sample + "." + bedfile + ".indent" + str(indent) + ".vcf.gz"
+        # sampleemitallname = sample + "." + bedfile + ".indent" + str(indent) + ".emit_all.vcf.gz"
 
         if os.path.isfile(samplevcfname):
             upa_util.vcf_name_strip(samplevcfname)
+            upa_util.bash_command("bcftools index " + samplevcfname, verbose, cmdfile, logfile)
             samplevcfnames.append(samplevcfname)
         else:
             print "ERROR: Cannot find " + samplevcfname
 
     #Merge the resulting VCFs together using bcftools
-    bcfmergecmd = "bcftools merge -Ov -o " + bcname + "-samples.vcf "
+    bcfmergecmd = "bcftools merge -Oz -o " + bcname + "-samples.vcf.gz "
     if regionrestrict:
         bcfmergecmd = bcfmergecmd + " -r " + regionrestrict
     for samplevcfname in samplevcfnames:
