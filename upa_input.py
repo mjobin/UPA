@@ -39,7 +39,7 @@ def addreadgroup(flist, binloc, verbose, cmdfile, logfile):
 
 def bcfmpileup(flist, ref, bcname, regionrestrict, diploid, q, cmdfile, logfile):
     print "\nCreating mpileup consensus using BCFTools and writing as a VCF..."
-    mpileupcmd = "bcftools mpileup -I -C 50 -d 8000 -Ov -f " + ref + " -q " + q + " "
+    mpileupcmd = "bcftools mpileup -C 50 -d 8000 -Ov -f " + ref + " -q " + q + " "
     for i in range(len(flist)):
         sample = flist[i]
         mpileupcmd = mpileupcmd + sample + ".bam" + " "
