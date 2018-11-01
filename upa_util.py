@@ -2,7 +2,7 @@
 
 #####################################
 #####        HPG Lab            #####
-#####    updated July 2018      #####
+#####    updated Oct 2018       #####
 #####       MJJ                 #####
 #####################################
 
@@ -14,8 +14,19 @@ import os
 from subprocess import PIPE
 import progressbar
 from Bio import bgzf
+import linecache
+import re
+
 
 def bash_command(cmd, verbose, cmdfile, logfile):
+    """ Execute external program using bash
+
+    :param cmd: Command line to be executed by bash.
+    :param verbose: Verbose output to log.
+    :param cmdfile: File storing external commands invoked.
+    :param logfile: Output log.
+    :return:
+    """
     cmdfile.write(cmd)
     cmdfile.write("\n\n")
     subp = subprocess.Popen(['/bin/bash', '-c', cmd], stdout=PIPE, stderr=PIPE)
@@ -30,6 +41,11 @@ def bash_command(cmd, verbose, cmdfile, logfile):
     return stdout
 
 def name_strip(orig_name):
+    """ Strips long or extraneous file names. Useful for file conversions where name size limits apply.
+
+    :param orig_name: Original file name.
+    :return: Modified name.
+    """
     nodir = os.path.basename(orig_name)
     dotsplits = nodir.split(".")
     dotsplit = dotsplits[0]
@@ -38,6 +54,11 @@ def name_strip(orig_name):
     return finalname
 
 def vcf_name_strip(vcffilename):
+    """ Searches VCF file for lines containing smaple names and truncates them
+
+    :param vcffilename: Original VCF file.
+    :return: VCF file with shortened/altered names.
+    """
     basecols = vcffilename.split(".")
     vcfstrippedname = basecols[0]
     vcfstrippedname = vcfstrippedname + "-striptmp.vcf.gz"
@@ -65,13 +86,19 @@ def vcf_name_strip(vcffilename):
     shutil.move(vcfstrippedname, vcffilename)
 
 def poplist_alter(poplistfile, namebase):
+    """ Use FAM-style flat file to search and restore population names
+
+    :param poplistfile: File with population in first column and smaple name in second. FAM files work.
+    :param namebase: Base name of PED file.
+    :return: Name of PED file with altered population names.
+    """
     poplist = {}
     poplistd = open(poplistfile, 'r')
 
     for poplistline in poplistd:
         popstrip = poplistline.rstrip()
         if len(popstrip) > 0:
-            popcols = popstrip.split("\t")
+            popcols = popstrip.split()
             poplist[popcols[1]] = popcols[0]
 
     pedfilename = namebase + ".ped"
@@ -80,7 +107,6 @@ def poplist_alter(poplistfile, namebase):
     for pedfileline in pedfiled:
         pedstrip = pedfileline.rstrip()
         pedcols = pedstrip.split(" ")
-
         if pedcols[1] in poplist:
             pedcols[0] = poplist[pedcols[1]]
             newpedline = '\t'.join(pedcols)
@@ -91,7 +117,18 @@ def poplist_alter(poplistfile, namebase):
     shutil.move("pedtemp.ped", pedfilename)
     return pedfilename
 
+
+
 def eigenstrat_convert(bcbase, verbose, cmdfile, logfile, diploid, ancient):
+    """ Use convertf to convert from PED to EIGENSTRAT format
+
+
+    :param bcbase: Base name of input file.
+    :param verbose: Berbose output to log.
+    :param cmdfile: File storing external commands invoked.
+    :param logfile: Output log.
+    :return: Name of Eigenstrat file.
+    """
     eigenname = "par." + bcbase + ".PED.EIGENSTRAT"
     eigennout = open(eigenname, 'w')
     eigennout.write("genotypename:    ")
@@ -121,6 +158,17 @@ def eigenstrat_convert(bcbase, verbose, cmdfile, logfile, diploid, ancient):
 
 
 def eigenstrat_smartpca(bcbase, diploid, ancient, verbose, cmdfile, logfile):
+    """ Create parameter file and run SmartPCA
+
+
+    :param bcbase: base name of input file
+    :param diploid: are samples diploid?
+    :param ancient: use lsqproject argument in SmartPCA
+    :param verbose: verbose output to log
+    :param cmdfile: file storing external commands invoked
+    :param logfile: output log
+    :return: Name of SmartPCA parameter file.
+    """
     eigenname = "par.smartpca" + bcbase
     eigennout = open(eigenname, 'w')
     eigennout.write("genotypename:    ")
@@ -150,44 +198,40 @@ def eigenstrat_smartpca(bcbase, diploid, ancient, verbose, cmdfile, logfile):
     bash_command("smartpca -p " + eigenname, verbose, cmdfile, logfile)
     return eigenname
 
-def createrefallelelist(ref, other):
+def mergeref(refvcf, othervcf, diploid, mergefoundonly, annotate):
+    """ Adds the read group information by using Picard
 
-    #Create a dictionary based on position
-    reflines = ref.split("\n")
-
-    aflines = []
-
-    refdict = {}
-    for refline in reflines:
-        refcols = refline.split()
-        if len(refcols) > 4:
-            refdict[refcols[1]] = refcols
-
-    otherlines = other.split("\n")
-    otherdict = {}
-    for otherline in otherlines:
-        othercols = otherline.split()
-        if len(othercols) > 4:
-            otherdict[othercols[1]] = othercols
-
-    for key in refdict:
-        if key in otherdict:
-            print "At position " + key + " other ID is " + otherdict[key][2] + " and its REF is " + otherdict[key][3] + " while sample REF is " + refdict[key][3] + "\n"
-            aflines.append(otherdict[key][2] + " " + refdict[key][3] + "\n")
-
-    return aflines
-
-
-
-def mergeref(refvcf, othervcf, diploid):
+    :param refvcf: VCF file mapped to reference given by ref argument on input, normally the samples.
+    :param othervcf: VCF file of external dataset.
+    :param diploid: Are samples diploid? Are friends electric.
+    :param mergefoundonly: Merged file will contain sites found in both file only.
+    :param annotate: Annotate the ID column of the merged file from the external dataset (othervcf).
+    :param verbose: Verbose output to log.
+    :param cmdfile: File storing external commands invoked.
+    :param logfile: Output log.
+    :return: Name of merged VCF file.
+    """
     #First read in the reference (normally, the sample) VCF, and create a line dictionary based on position
 
+
     mergevcf = refvcf[:-7]
-    mergevcf += "-MERGED.vcf"
+    mergevcf += "-MERGED.vcf.gz"
+
+    if refvcf[-3:] == ".gz":
+        refun = refvcf[:-3]
+        with bgzf.open(refvcf, 'rb') as f_in, open(refun, 'w') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        refvcf = refun
+
+    if othervcf[-3:] == ".gz":
+        otherun = othervcf[:-3]
+        with bgzf.open(othervcf, 'rb') as f_in, open(otherun, 'w') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        othervcf = otherun
 
 
     print "\nReading " + refvcf +  "..."
-    reffile = bgzf.BgzfReader(refvcf, 'r')
+    reffile = open(refvcf, 'r')
     ref_data = []
     for file_line in reffile:
         if len(file_line.rstrip()) > 0:  # Strip blank lines
@@ -196,25 +240,30 @@ def mergeref(refvcf, othervcf, diploid):
     refheaderlist = []
     refdict = {}
     foundheader = False
-    bar = progressbar.ProgressBar()
-    for i in bar(range(len(ref_data))):
+    # bar = progressbar.ProgressBar()
+    # for i in bar(range(len(ref_data))):
+    for i in range(len(ref_data)):
         file_line = ref_data[i]
-        cols = file_line.split('\t')
+        cols = file_line.split()
+        # print cols
         if foundheader: #from here on, its data
-            refdict[cols[1]] = cols
+            # print cols[0]+"-"+cols[1] + " " + str(i)
+            refdict[cols[0]+"-"+cols[1]] = i
         else: ##just add to header repository
             if cols[0] == '#CHROM':
                 refheaderline = file_line
                 refhdrcols = cols
+                print " number of total columns in ref " + str(len(refhdrcols))
                 foundheader = True
             elif "##fileformat" not in file_line:
                 refheaderlist.append(file_line)
     reffile.close()
 
+
     foundheader = False
     #Next, read in
     print "\nReading " + othervcf +  "..."
-    otherfile = bgzf.BgzfReader(othervcf, 'r')
+    otherfile = open(othervcf, 'r')
     other_data = []
     for file_line in otherfile:
         if len(file_line.rstrip()) > 0:  # Strip blank lines
@@ -229,11 +278,12 @@ def mergeref(refvcf, othervcf, diploid):
         file_line = other_data[i]
         cols = file_line.split('\t')
         if foundheader: #from here on, its data
-            otherdict[cols[1]] = cols
+            otherdict[cols[0]+"-"+cols[1]] = i
         else: ##just add to header repository
             if cols[0] == '#CHROM':
                 otherheaderline = file_line
                 othersamplenames = cols[9:]
+                print " number of sample columns in other " + str(len(othersamplenames))
                 foundheader = True
             elif "##fileformat" not in file_line:
                 otherheaderlist.append(file_line)
@@ -241,8 +291,10 @@ def mergeref(refvcf, othervcf, diploid):
 
     oslen = len(othersamplenames)
 
+
+
     print "Writing to " + mergevcf
-    mergeout = open(mergevcf, 'w')
+    mergeout = bgzf.BgzfWriter(mergevcf, 'wb')
 
 
     #Merged header
@@ -267,33 +319,168 @@ def mergeref(refvcf, othervcf, diploid):
     mergeout.write(hdrline)
     mergeout.write("\n")
 
-    for key in refdict:
-        siteline = refdict[key]
-        if key in otherdict:
-            print "Match at position " + key
-            siteline.append(otherdict[key][9:])
-        else:
-            print "No match at position " + key
-            for nom in range(oslen):
-                if diploid:
-                    siteline.append("./.")
-                else:
-                    siteline.append(".")
-        if len(siteline) != len(outhdr):
-            print "ERROR: Line in merged VCF has " + str(len(siteline)) + " but header line has " + str(len(outhdr))
 
-        ##Now check if its all missing
+    print "Merging...."
+    bar = progressbar.ProgressBar()
+    for key, lnum in bar(sorted(refdict.items(), key=refkeysort)):
+    # for key, lnum in sorted(refdict.items(), key=refkeysort):
+        foundother = False
+        refline = linecache.getline(refvcf, lnum+1).strip() # Add one because linecache lines start on 1 not 0
+        # print key + " " + str(lnum+1) + " " + refline
+        refcols = refline.split('\t')
+        if key in otherdict:
+            foundother = True
+            otnum = otherdict[key]
+            otherline = linecache.getline(othervcf, otnum+1).strip()
+
+
+            complist = []
+
+            othertm = {}
+            # print otherline
+            othercols = otherline.split()
+
+            # print "\n"
+            #
+            # print key + " " + str(lnum + 1) + " " + refcols[1] +  " Otherdict " + othercols[1]
+
+            trueref = refcols[3]
+            complist.append(trueref)
+            truealts = refcols[4].split(",")
+            for alt in truealts:
+                complist.append(alt)
+
+            # print "True REF " + trueref
+            otherref = othercols[3]
+            otheralts = othercols[4].split(",")
+
+            if otherref in complist:
+                pass
+            else:
+                complist.append(otherref)
+
+            for k in range(len(otheralts)):
+                if otheralts[k] in complist:
+                    pass
+                else:
+                    complist.append(otheralts[k])
+
+
+
+            # print complist
+
+            otherrefloc = complist.index(otherref)
+            othertm[0] = otherrefloc
+            for k in range(len(otheralts)):
+                othertm[k+1] = complist.index(otheralts[k])
+
+            altlist = complist
+            altlist.remove(trueref)
+
+
+            # print "TM "
+            # print othertm
+
+            siteline = []
+            for l in range (len(refcols)):
+                if l == 4:
+                    siteline.append(','.join(altlist))
+                elif l == 2:
+                    if annotate:
+                        siteline.append(othercols[l])
+                    else:
+                        siteline.append(refcols[l])
+                else:
+                    siteline.append(refcols[l])
+
+            #
+            # print "final siteline"
+
+
+
+            #construct
+            for othersite in othercols[9:]:
+                othersites = re.split("[/|]+", othersite)
+
+
+
+                # print othersites
+                olen = len(othersites)
+                # print olen
+                if olen > 1 and not diploid:
+                    print "ERROR: not diploid but more than one site at " + key
+                    exit(1)
+                oconstruct = ""
+                for i in xrange(olen):
+                    osite = othersites[i]
+                    if osite == ".":
+                        oconstruct += "."
+                        # print osite + " becomes ."
+                    else:
+                        # print osite + " becomes " + str(othertm[int(osite)])
+                        oconstruct += str(othertm[int(osite)])
+                    if i < olen-1:
+                        oconstruct += "/" # FIXME this always ouputs the unphased marker
+
+
+
+                siteline.append(oconstruct)
+        else:
+            # print key + " " + str(lnum+1) + " no match"
+            if mergefoundonly:
+                siteline = ""
+            else:
+                refline = linecache.getline(refvcf, lnum+1).strip()
+                refcols = refline.split('\t')
+                siteline = refcols
+                for nom in range(oslen):
+                    if diploid:
+                        siteline.append("./.") # FIXME this always ouputs the unphased marker
+                    else:
+                        siteline.append(".")
+
+
+        ##Now check if its all missing or empty
         allmissing = True
         for i in xrange(9, len(siteline)):
             site = siteline[i]
-            if site != "./." and site != ".":
+            if site != "./." and site != "." and site != ".|.":
                 allmissing = False
         if allmissing:
-            print "At " + key + " all sites missing, skipping."
+            # print "At " + key + " all sites missing, skipping."
+            pass
         else:
             siteout = '\t'.join([str(x) for x in siteline])
+            # print siteout
             siteout += "\n"
-            mergeout.write(siteout)
+            if mergefoundonly:
+                if foundother:
+                    if len(siteline) != len(outhdr):
+                        print "ERROR: Line in merged VCF has " + str(len(siteline)) + " but header line has " + str(
+                            len(outhdr))
+                    mergeout.write(siteout)
+            else:
+                if len(siteline) != len(outhdr):
+                    print "ERROR: Line in merged VCF has " + str(len(siteline)) + " but header line has " + str(
+                        len(outhdr))
+                mergeout.write(siteout)
     mergeout.close()
     return mergevcf
 
+
+
+def refkeysort(string):
+    """ Sort function for compounded chromosome-position keys in dicitonary
+
+    :param string: Input string. Should be in format <chromosome>-<position>.
+    :return: Numerical chromosome-first sort number.
+    """
+    thekey = string[0]
+    halves = thekey.split("-")
+    compound = 0
+    if str(halves[0]).isdigit():
+        compound += int(halves[0]) * 1000000000000  # Longer than any single chromosome
+    else: #for X, Y MT
+        compound += ord(halves[0][0]) * 1000000000000
+    compound += int(halves[1])
+    return compound

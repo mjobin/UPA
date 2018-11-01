@@ -21,6 +21,11 @@ import time
 import upa_util
 
 def converttohaploid():
+    """ Convert a tped file to haploid
+
+    :return:
+    """
+
     print "\nConverting to tped format..."
     upa_util.bash_command("plink --bed " + file + ".bed --bim " + file + ".bim --fam " + file + ".fam  --alleleACGT --recode transpose --out " + file, verbose, cmdfile, logfile)
 
@@ -78,6 +83,10 @@ def converttohaploid():
 
 
 def run_ad():
+    """ Invokes ADMIXTURE software for the user-specified number of reps, between chosen low and high K.
+
+    :return:
+    """
     print "\nRunning Admixture..."
 
     famfilename = file + ".h.fam"

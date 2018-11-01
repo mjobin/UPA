@@ -2,22 +2,27 @@
 
 #####################################
 #####        HPG Lab            #####
-#####    updated Sept 2018      #####
+#####    updated Oct  2018      #####
 #####       MJJ                 #####
 #####################################
 
 # Author: Matthew Jobin, UCSC Human Paleogenomics Lab
 import shutil
 import os
-import gzip
 import upa_util
+from Bio import bgzf
 
 
-
-
-
-##Strips 'chr' from BAM files
+##
 def stripchr(flist, verbose, cmdfile, logfile):
+    """ Strips 'chr' from BAM files
+
+    :param flist: File list.
+    :param verbose: Verbose output to log.
+    :param cmdfile: File storing external commands invoked.
+    :param logfile: Output log.
+    :return:
+    """
     print "\nStripping chr from chromosome names..."
     for i in range(len(flist)):
         sample = flist[i]
@@ -26,8 +31,18 @@ def stripchr(flist, verbose, cmdfile, logfile):
         shutil.move(sample + ".bam", sample + ".wchr.bam")
         shutil.move(sample + ".intermediate.bam", sample + ".bam")
 
-##Adds the read group
+
+
+
 def addreadgroup(flist, binloc, verbose, cmdfile, logfile):
+    """ Adds the read group information by using Picard
+
+    :param flist: File list.
+    :param verbose: Verbose output to log.
+    :param cmdfile: File storing external commands invoked.
+    :param logfile: Output log.
+    :return:
+    """
     for i in range(len(flist)):
         sample = flist[i]
         basename = upa_util.name_strip(sample)
@@ -37,15 +52,25 @@ def addreadgroup(flist, binloc, verbose, cmdfile, logfile):
         shutil.move(sample + ".intermediate.bam", sample + ".bam")
 
 
-def bcfmpileup(flist, ref, bcname, regionrestrict, diploid, q, cmdfile, logfile):
+def bcfmpileup(flist, ref, bcname, regionrestrict, diploid, q, threads, cmdfile, logfile):
+    """ Call genotypes using BCFTools.
+
+    :param flist: File list.
+    :param ref: Reference genome.
+    :param bcname: Base name of input file.
+    :param verbose: Verbose output to log.
+    :param cmdfile: File storing external commands invoked.
+    :param logfile: Output log.
+    :return: Name of merged sample VCF.
+    """
     print "\nCreating mpileup consensus using BCFTools and writing as a VCF..."
-    mpileupcmd = "bcftools mpileup -C 50 -d 8000 -Ov -f " + ref + " -q " + q + " "
+    mpileupcmd = "bcftools mpileup --threads " + threads + " -C 50 -d 8000 -Ov -f " + ref + " -q " + q + " "
     for i in range(len(flist)):
         sample = flist[i]
         mpileupcmd = mpileupcmd + sample + ".bam" + " "
     if regionrestrict:
         mpileupcmd = mpileupcmd + " -r " + regionrestrict
-    mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + bcname + "-samples.vcf.gz - "
+    mpileupcmd = mpileupcmd + " | bcftools call --threads " + threads + " -Oz -m -o " + bcname + "-samples.vcf.gz - "
     if diploid:
         pass
     else:
@@ -54,7 +79,21 @@ def bcfmpileup(flist, ref, bcname, regionrestrict, diploid, q, cmdfile, logfile)
     return bcname + "-samples.vcf.gz"
 
 
-def genocaller(flist, bedfile, bcname, indent, ref, regionrestrict, verbose, cmdfile, logfile):
+def genocaller(flist, bedfile, bcname, indent, ref, regionrestrict, threads, verbose, cmdfile, logfile):
+    """ Calls genotypes using Krishna Veeramah's GenoCaller_indent
+
+    :param flist: File list.
+    :param bedfile: UCSC-style BED file.
+    :param bcname: Base name of input file.
+    :param indent: Indent depth to each end of read.
+    :param ref: Reference genome.
+    :param regionrestrict: Area of genome to limit calling.
+    :param threads: Number of multiprocessing threads to use.
+    :param verbose: Verbose output to log.
+    :param cmdfile: File storing external commands invoked.
+    :param logfile: Output log.
+    :return: Name of merged sample VCF.
+    """
     print "\nGenoCaller..."
     samplevcfnames = []
     for i in range(len(flist)):
@@ -63,7 +102,9 @@ def genocaller(flist, bedfile, bcname, indent, ref, regionrestrict, verbose, cmd
         upa_util.bash_command(gccmd, verbose, cmdfile, logfile)
 
         #Must compress to allow bcftools to merge
-        with open(sample + "." + bedfile + ".indent" + str(indent) + ".vcf", 'r') as f_in, gzip.open(sample + "." + bedfile + ".indent" + str(indent) + ".vcf.gz", 'wb') as f_out:
+
+        with open(sample + "." + bedfile + ".indent" + str(indent) + ".vcf", 'r') as f_in, bgzf.open(sample + "." + bedfile + ".indent" + str(indent) + ".vcf.gz", 'wb') as f_out:
+        # with open(sample + "." + bedfile + ".indent" + str(indent) + ".vcf", 'r') as f_in, gzip.open(sample + "." + bedfile + ".indent" + str(indent) + ".vcf.gz", 'wb') as f_out:
             shutil.copyfileobj(f_in, f_out)
 
         samplevcfname = sample + "." + bedfile + ".indent" + str(indent) + ".vcf.gz"
@@ -71,13 +112,13 @@ def genocaller(flist, bedfile, bcname, indent, ref, regionrestrict, verbose, cmd
 
         if os.path.isfile(samplevcfname):
             upa_util.vcf_name_strip(samplevcfname)
-            upa_util.bash_command("bcftools index " + samplevcfname, verbose, cmdfile, logfile)
+            upa_util.bash_command("bcftools index --threads " + threads + " " + samplevcfname, verbose, cmdfile, logfile)
             samplevcfnames.append(samplevcfname)
         else:
             print "ERROR: Cannot find " + samplevcfname
 
     #Merge the resulting VCFs together using bcftools
-    bcfmergecmd = "bcftools merge -Oz -o " + bcname + "-samples.vcf.gz "
+    bcfmergecmd = "bcftools merge --threads " + threads + " -Oz -o " + bcname + "-samples.vcf.gz "
     if regionrestrict:
         bcfmergecmd = bcfmergecmd + " -r " + regionrestrict
     for samplevcfname in samplevcfnames:

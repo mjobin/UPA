@@ -2,7 +2,7 @@
 
 #####################################
 #####        HPG Lab            #####
-#####    updated Sept 2018      #####
+#####    updated Oct  2018      #####
 #####       MJJ                 #####
 #####################################
 
@@ -14,7 +14,6 @@ import argparse
 import os
 import datetime
 import progressbar
-import gzip
 import shutil
 import upa_util
 import upa_mito
@@ -102,7 +101,7 @@ if __name__ == "__main__":
                         help='Location of yhaplo. Leave blank to prevent it from running.',
                         default='')
     parser.add_argument('-poplistfile', metavar='<poplistfile>',
-                        help='Text file where the FIRST column is the population and the Second coumn is the individual. Can be the same file as your plink keeplist',
+                        help='Text file where the FIRST column is the population and the Second coumn is the individual. Can be the same file as your plink keeplist or FAM file.',
                         default='')
     parser.add_argument('-lowk', metavar='<lowk>', help='Lowest K value for Admixture run',
                         default=2)
@@ -162,7 +161,11 @@ if __name__ == "__main__":
     parser.set_defaults(mergeref=False)
     parser.add_argument('-annotate', dest='annotate', help='Annotate from mergevcffile to samples VCF.',
                         action='store_true')
-    parser.set_defaults(addreadgroup=False)
+    parser.set_defaults(annotate=False)
+    parser.add_argument('-mergefoundonly', dest='mergefoundonly', help='When merging VCF files, only keep sites found in both files.',
+                        action='store_true')
+    parser.set_defaults(mergefoundonly=False)
+
 
 
 
@@ -215,6 +218,7 @@ if __name__ == "__main__":
     plinkgeno = args.plinkgeno
     mergeref = bool(args.mergeref)
     annotate = bool(args.annotate)
+    mergefoundonly = bool(args.mergefoundonly)
 
     # adpipe
     lowk = int(args.lowk)
@@ -264,21 +268,29 @@ if __name__ == "__main__":
     if vcf_file:
         bampreprocess = False
         bcbase = os.path.basename(vcf_file)
-        bcname, fileext = os.path.splitext(bcbase)
+        if bcbase[-7:] == ".vcf.gz":
+            bcname = bcbase[:-7]
+            with bgzf.open(bcbase, 'rb') as f_in, open(bcname + ".vcf", 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        elif bcbase[-4:] == ".vcf":
+            bcname = bcbase[:-4]
+        else:
+            print "ERROR: Must supply a .vcf or .gz file is using -vcf_file."
+            exit(1)
+
+
     elif bcfile != "" and bamlist == "":
         bcbase = os.path.basename(bcfile)
         bcname, fileext = os.path.splitext(bcbase)
         bcin = open(bcfile, 'r')
         for bcline in bcin:
             bccols = bcline.split()
-
             binfile = wd + "/" + bccols[1] + "/BWA_" + refname + "/" + bccols[1] + bcleftspec + refname + ".q" + q + bcrightspec
             if os.path.isfile(binfile + ".bam"):
                 flist.append(binfile)
             else:
                 print "ERROR: File " + binfile + " does not seem to have a corresponding BAM  file in " + wd
                 exit(1)
-
     elif bcfile == "" and bamlist != "":
         bcbase = os.path.basename(bamlist)
         bcname, fileext = os.path.splitext(bamlist)
@@ -323,13 +335,12 @@ if __name__ == "__main__":
             print "ERROR: Cannot find " + vcf_file
             exit(1)
     elif callmethod == 'bcf':
-        samplevcffile = upa_input.bcfmpileup(flist, ref, bcname, regionrestrict, diploid, q, cmdfile, logfile)
+        samplevcffile = upa_input.bcfmpileup(flist, ref, bcname, regionrestrict, diploid, q, threads, cmdfile, logfile)
     elif callmethod == 'genocaller':
-        samplevcffile = upa_input.genocaller(flist, gcbedfile, bcname, gcindent, ref, regionrestrict, verbose, cmdfile, logfile)
+        samplevcffile = upa_input.genocaller(flist, gcbedfile, bcname, gcindent, ref, regionrestrict, threads, verbose, cmdfile, logfile)
     else:
         print "ERROR: Unknown calling method " + callmethod
         exit(1)
-
 
     if samplevcffile == "":
         print "ERROR. Either specify a calling method for your BAM files or submit a pre-processed VCF file."
@@ -338,52 +349,53 @@ if __name__ == "__main__":
     print "Stripping long names from VCF genotypes. This should also match sample names to either the second column name of a barcode file or the first element of the file name on the a BAM file list."
     upa_util.vcf_name_strip(samplevcffile)
 
-    mergedvcfname = bcname + "-MERGED.vcf"
+    mergedvcfname = bcname + "-MERGED.vcf" #Must be unzipped by here
 
     # If external dataset is a BAM file, call using BCFtools
     if mergebamfile:
         print "\nMerging sample VCF file with external BAM reference" + mergebamfile   + "..."
         mergebambase = mergebamfile.rsplit(".", 1)[0]
         mergevcffile = mergebambase + ".vcf.gz"
-        mpileupcmd = ("bcftools mpileup -q " + q + " -d 8000 -Ou -f " + ref + " " + mergebamfile)
+        mpileupcmd = ("bcftools mpileup --threads " + threads + " -q " + q + " -d 8000 -Ou -f " + ref + " " + mergebamfile)
         if regionrestrict:
             mpileupcmd = mpileupcmd + " -r " + regionrestrict
-        mpileupcmd = mpileupcmd + " | bcftools call -Oz -m -o " + mergevcffile + " - "
+        mpileupcmd = mpileupcmd + " | bcftools --threads " + threads + " call -Oz -m -o " + mergevcffile + " - "
 
         if diploid:
             pass
         else:
             mpileupcmd = mpileupcmd + " --ploidy 1 "
         upa_util.bash_command(mpileupcmd, verbose, cmdfile, logfile)
-        upa_util.bash_command("bcftools index -f " + mergevcffile, verbose, cmdfile, logfile)
-
+        upa_util.bash_command("bcftools index --threads " + threads + " -f " + mergevcffile, verbose, cmdfile, logfile)
 
     if vcfchromrename:
         renamefile = wd + "/" + vcfchromrename
-        upa_util.bash_command("bcftools annotate --rename-chrs  " + renamefile + " " + samplevcffile + " -Oz -o " + bcname + "upatmp.vcf.gz", verbose, cmdfile, logfile)
+        upa_util.bash_command("bcftools annotate --threads " + threads + " --rename-chrs  " + renamefile + " " + samplevcffile + " -Oz -o " + bcname + "upatmp.vcf.gz", verbose, cmdfile, logfile)
         shutil.move(bcname + "upatmp.vcf.gz",  samplevcffile )
-        upa_util.bash_command("bcftools index -f " + samplevcffile, verbose, cmdfile, logfile)
-
+        upa_util.bash_command("bcftools index --threads " + threads + " -f " + samplevcffile, verbose, cmdfile, logfile)
 
     if mergevcffile:
         if not os.path.isfile(mergevcffile):
             print "ERROR: Cannot find " + mergevcffile
             exit(1)
-        if annotate:
-            print("\nAnnotating...")
-            amcmd = "bcftools annotate --threads " + threads + " -a " + mergevcffile + " -c CHROM,POS,ID " + samplevcffile
-            upa_util.bash_command(amcmd, verbose, cmdfile,logfile)
+
 
         #Merge the sample and external data into one VCF, keeping the samples' REF
-        mergedvcfname = upa_util.mergeref(samplevcffile, mergevcffile, diploid)
+        mergedvcfname = upa_util.mergeref(samplevcffile, mergevcffile, diploid, mergefoundonly, annotate)
+
+        print "Stripping long names from VCF genotypes. This should also match sample names to either the second column name of a barcode file or the first element of the file name on the a BAM file list."
+        upa_util.vcf_name_strip(mergedvcfname)
+
+    else:
+        shutil.move(samplevcffile, mergedvcfname)
 
 
 
-    print "Stripping long names from VCF genotypes. This should also match sample names to either the second column name of a barcode file or the first element of the file name on the a BAM file list."
-    upa_util.vcf_name_strip(mergedvcfname)
+    print "Indexing " + mergedvcfname
+    upa_util.bash_command("bcftools index --threads " + threads + " -f " + mergedvcfname, verbose, cmdfile, logfile)
 
-    upa_util.bash_command("bcftools index -f " + mergedvcfname, verbose, cmdfile, logfile)
-
+    print "EXIT... until i figure out how to convert a bgzipped VCF to PED without unzipping it...."
+    print exit()
 
     # IMPUTOR
     if imputor:
@@ -395,13 +407,14 @@ if __name__ == "__main__":
         if imptree:
             impcmd = impcmd + " -tree " + imptree
         upa_util.bash_command(impcmd, True, cmdfile, logfile)
-        shutil.move(bcname + "-MERGED-out.vcf", mergedvcpname)  # Overwrite with imputed sequence so pipeline knows which to use
+        shutil.move(bcname + "-MERGED-out.vcf", mergedvcfname)  # Overwrite with imputed sequence so pipeline knows which to use
 
 
     # Population Genetics Functions
     # -----------------------------
 
 
+    #This expects an unzipped VCF
     print "Converting " + mergedvcfname + " to PED format"
     plinkout = upa_util.bash_command("plink --vcf " + mergedvcfname + " --double-id --allow-extra-chr --missing-phenotype 2 --recode 12 --out " + bcname, verbose, cmdfile, logfile)
 

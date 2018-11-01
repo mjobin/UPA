@@ -16,6 +16,16 @@ import upa_util
 
 
 def gen_reg_line(sample, mindepth, maxgap, cmdfile, logfile):
+    """ Generate line describing regions covered by sample
+
+    :param sample: File list.
+    :param mindepth: Minimum depth of coverage to include.
+    :param maxgap: Maximum gap size to allow a region to continue.
+    :param cmdfile: File storing external commands invoked.
+    :param logfile: Output log.
+    :return: Line describing genomic regions covered by sample.
+    """
+
     regline = ""
     # depthinfo = upa_util.bash_command("samtools depth " + sample + " > upadepthout.txt", False, cmdfile, logfile)
 
@@ -53,6 +63,16 @@ def gen_reg_line(sample, mindepth, maxgap, cmdfile, logfile):
 
 
 def haplogrep_gen_hsd(flist, ref, bcname, regdic, cmdfile, logfile):
+    """ Generate HSD file from list of samples using BCFtools mpileup/call.
+
+    :param flist: File list.
+    :param ref: Reference genome.
+    :param bcname: Base name of input file.
+    :param regdic: Region dictionary.
+    :param cmdfile: File storing external commands invoked.
+    :param logfile: Output log.
+    :return: Dictionary of Regions coevered by each sample.
+    """
     flength = len(flist)
     fbamlist = []
 
@@ -72,6 +92,14 @@ def haplogrep_gen_hsd(flist, ref, bcname, regdic, cmdfile, logfile):
     return regdic
 
 def haplogrep_java(invcf, scriptsloc, cmdfile, logfile):
+    """ Submit HSD file directly to Haplogrep server.
+
+    :param invcf: Input VCF file.
+    :param scriptsloc: Location of scripts repository on local machine.
+    :param cmdfile: File storing external commands invoked.
+    :param logfile: Output log.
+    :return:
+    """
     filebase, filext = os.path.splitext(invcf)
 
     upa_util.bash_command("java -jar " + scriptsloc + "haplogrep-2.1.1.jar --format vcf --in " + invcf + " --out " + filebase + ".hsd --phylotree 17", False, cmdfile, logfile)
