@@ -16,6 +16,7 @@ import progressbar
 from Bio import bgzf
 import linecache
 import re
+import gzip
 
 
 def bash_command(cmd, verbose, cmdfile, logfile):
@@ -216,7 +217,7 @@ def mergeref(refvcf, othervcf, diploid, mergefoundonly, annotate):
 
     mergevcf = refvcf[:-7]
     mergevcf += "-MERGED.vcf.gz"
-
+    # do a bgzf rad if it is zipped
     if refvcf[-3:] == ".gz":
         refun = refvcf[:-3]
         with bgzf.open(refvcf, 'rb') as f_in, open(refun, 'w') as f_out:
@@ -293,8 +294,10 @@ def mergeref(refvcf, othervcf, diploid, mergefoundonly, annotate):
 
 
 
+
     print "Writing to " + mergevcf
-    mergeout = bgzf.BgzfWriter(mergevcf, 'wb')
+    mergeout = gzip.open(mergevcf, 'wb')
+
 
 
     #Merged header

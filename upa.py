@@ -394,9 +394,6 @@ if __name__ == "__main__":
     print "Indexing " + mergedvcfname
     upa_util.bash_command("bcftools index --threads " + threads + " -f " + mergedvcfname, verbose, cmdfile, logfile)
 
-    print "EXIT... until i figure out how to convert a bgzipped VCF to PED without unzipping it...."
-    print exit()
-
     # IMPUTOR
     if imputor:
         if diploid:
@@ -413,8 +410,7 @@ if __name__ == "__main__":
     # Population Genetics Functions
     # -----------------------------
 
-
-    #This expects an unzipped VCF
+    #This expects an unzipped VCF or gzippped NOT BGZIPPED
     print "Converting " + mergedvcfname + " to PED format"
     plinkout = upa_util.bash_command("plink --vcf " + mergedvcfname + " --double-id --allow-extra-chr --missing-phenotype 2 --recode 12 --out " + bcname, verbose, cmdfile, logfile)
 
